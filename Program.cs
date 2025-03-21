@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.IO;
 using System.Windows.Forms;
 using Newtonsoft.Json;
@@ -16,7 +17,6 @@ namespace JsonEditorApp
         private PixelArtPictureBox fileImagePictureBox;
         private SpriteAnimation spriteAnimation;
         private HashSet<string> expandedPaths = new HashSet<string>();
-        private FlowLayoutPanel animationPanel;
         private List<SpriteAnimation> animationLayers = new List<SpriteAnimation>();
         private CheckBox enforcePresetCheckbox;
         private ComboBox presetSelector;
@@ -28,16 +28,20 @@ namespace JsonEditorApp
         private Label descriptionLabel;
         private string selectedPropertyPath = null;
         private string originalPropertyName = null;
+        private TabControl fileTabControl;
 
         public MainForm()
         {
             InitializeComponent();
-            InitializeNewJsonObject();
 
             var recent = RecentFiles.Load();
             if (recent.Count > 0 && File.Exists(recent[0]))
             {
-                OpenFile(recent[0]);
+                OpenFileInNewTab(recent[0]);
+            }
+            else
+            {
+                CreateNewEditorTab("Untitled", null);
             }
         }
 
@@ -47,27 +51,25 @@ namespace JsonEditorApp
             this.Size = new System.Drawing.Size(1280, 720);
             this.StartPosition = FormStartPosition.CenterScreen;
 
-            // Create the main layout panel to properly position MenuStrip & SplitContainer
             TableLayoutPanel layoutPanel = new TableLayoutPanel();
             layoutPanel.Dock = DockStyle.Fill;
             layoutPanel.RowCount = 2;
             layoutPanel.ColumnCount = 1;
-            layoutPanel.RowStyles.Add(new RowStyle(SizeType.AutoSize)); // Auto-size for MenuStrip
-            layoutPanel.RowStyles.Add(new RowStyle(SizeType.Percent, 100)); // Remaining space for SplitContainer
+            layoutPanel.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+            layoutPanel.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
             this.Controls.Add(layoutPanel);
 
-            // Create MenuStrip
             MenuStrip menuStrip = new MenuStrip();
             menuStrip.Dock = DockStyle.Top;
             this.MainMenuStrip = menuStrip;
 
             ToolStripMenuItem fileMenu = new ToolStripMenuItem("File");
-
             ToolStripMenuItem newMenuItem = new ToolStripMenuItem("New", null, new EventHandler(NewFile));
             ToolStripMenuItem openMenuItem = new ToolStripMenuItem("Open", null, new EventHandler(OpenFile));
             ToolStripMenuItem saveMenuItem = new ToolStripMenuItem("Save", null, new EventHandler(SaveFile));
             ToolStripMenuItem saveAsMenuItem = new ToolStripMenuItem("Save As", null, new EventHandler(SaveFileAs));
             recentFilesMenuItem = new ToolStripMenuItem("Recent");
+
             fileMenu.DropDownItems.AddRange(new ToolStripItem[]
             {
                 newMenuItem,
@@ -79,21 +81,123 @@ namespace JsonEditorApp
             });
 
             menuStrip.Items.Add(fileMenu);
-            fileMenu.DropDownItems.AddRange(new ToolStripItem[] { newMenuItem, openMenuItem, saveMenuItem, saveAsMenuItem });
-            menuStrip.Items.Add(fileMenu);
-            this.Controls.Add(menuStrip);
-            this.MainMenuStrip = menuStrip;
             layoutPanel.Controls.Add(menuStrip, 0, 0);
+            this.MainMenuStrip = menuStrip;
 
+            fileTabControl = new TabControl();
+            fileTabControl.Dock = DockStyle.Fill;
+            fileTabControl.Name = "fileTabControl";
+            fileTabControl.DrawMode = TabDrawMode.OwnerDrawFixed;  // ✅ Custom Draw
+            fileTabControl.ItemSize = new Size(150, 25);  // Size of tabs
+            fileTabControl.SizeMode = TabSizeMode.Fixed;  // Make sure sizes apply
+            fileTabControl.Selecting += FileTabControl_Selecting;
+            fileTabControl.DrawItem += FileTabControl_DrawItem;
+
+            layoutPanel.Controls.Add(fileTabControl, 0, 1);
+
+            // Add the initial + tab
+            var plusTab = new TabPage("+");
+            fileTabControl.TabPages.Add(plusTab);
+            fileTabControl.Appearance = TabAppearance.Normal;
+            fileTabControl.SizeMode = TabSizeMode.Normal;
+            fileTabControl.ItemSize = new Size(0, 24);
+
+            menuStrip.RenderMode = ToolStripRenderMode.Professional;
+            menuStrip.BackColor = Color.FromArgb(30, 30, 30);
+            layoutPanel.Margin = Padding.Empty;
+            layoutPanel.Padding = Padding.Empty;
+            layoutPanel.BackColor = Color.FromArgb(30, 30, 30);
+
+            Theme.ApplyTheme(this);
+        }
+
+        private void FileTabControl_DrawItem(object sender, DrawItemEventArgs e)
+        {
+            TabControl tabControl = sender as TabControl;
+            Graphics g = e.Graphics;
+            Rectangle tabRect = tabControl.GetTabRect(e.Index);
+
+            bool isSelected = (e.State & DrawItemState.Selected) == DrawItemState.Selected;
+
+            // VS-like colors
+            Color tabBack = isSelected ? Color.FromArgb(50, 50, 50) : Color.FromArgb(30, 30, 30);
+            Color textColor = isSelected ? Color.White : Color.Gray;
+            Color borderColor = Color.FromArgb(102, 51, 153); // VS Purple
+            Font tabFont = new Font("Segoe UI", 8, FontStyle.Regular);
+
+            // Fill the tab background
+            using (Brush backBrush = new SolidBrush(tabBack))
+                g.FillRectangle(backBrush, tabRect);
+
+            // Draw tab text
+            string tabText = tabControl.TabPages[e.Index].Text;
+            TextRenderer.DrawText(g, tabText, tabFont, tabRect, textColor, TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter);
+
+            // Draw VS purple border only on selected tab
+            if (isSelected)
+            {
+                using (Pen borderPen = new Pen(borderColor, 2))
+                {
+                    g.DrawRectangle(borderPen, tabRect.X, tabRect.Y, tabRect.Width - 1, tabRect.Height - 1);
+                }
+            }
+        }
+
+
+        private void FileTabControl_Selecting(object sender, TabControlCancelEventArgs e)
+        {
+            TabControl tabControl = sender as TabControl;
+            if (e.TabPage.Text == "+")
+            {
+                e.Cancel = true; // Prevent selecting the + tab
+                OpenNewTab();
+            }
+        }
+
+        private void OpenNewTab()
+        {
+            CreateNewEditorTab("Untitled", null, null);
+        }
+
+        private TabPage CreateNewEditorTab(string title, JObject json, string filePath = null)
+        {
+            TabPage tabPage = new TabPage(title);
+
+            SplitContainer editorUI = SetupEditor();
+
+            FlowLayoutPanel animationPanel = editorUI.Panel2.Controls
+                .OfType<FlowLayoutPanel>()
+                .FirstOrDefault(f => f.Name == "animationPanel");
+
+            tabPage.Tag = new EditorContext
+            {
+                Json = json ?? new JObject(),
+                FilePath = filePath,
+                EditorUI = editorUI,
+                AnimationPanel = animationPanel
+            };
+
+            tabPage.Controls.Add(editorUI);
+
+            TabControl tabControl = this.Controls.Find("fileTabControl", true)[0] as TabControl;
+            tabControl.TabPages.Insert(tabControl.TabPages.Count - 1, tabPage);
+            tabControl.SelectedTab = tabPage;
+            Theme.ApplyTheme(tabControl);
+
+            return tabPage;
+        }
+
+        private SplitContainer SetupEditor()
+        {
             // Create SplitContainer inside the layout panel
             SplitContainer splitContainer = new SplitContainer();
             splitContainer.Dock = DockStyle.Fill;
-            layoutPanel.Controls.Add(splitContainer, 0, 1); // Add to second row
 
             // Create Properties Panel (Left Panel)
             Panel propertiesPanel = new Panel();
             propertiesPanel.Dock = DockStyle.Fill;
             splitContainer.Panel1.Controls.Add(propertiesPanel);
+            splitContainer.BorderStyle = BorderStyle.None;
 
             // Create a Panel to Wrap the Label and TreeView
             Panel treeContainerPanel = new Panel();
@@ -132,6 +236,7 @@ namespace JsonEditorApp
             FlowLayoutPanel buttonPanel = new FlowLayoutPanel();
             buttonPanel.Dock = DockStyle.Bottom;
             buttonPanel.Height = 40;
+            buttonPanel.Name = "buttonPanel";
             buttonPanel.FlowDirection = FlowDirection.LeftToRight;
             propertiesPanel.Controls.Add(buttonPanel);
 
@@ -150,6 +255,7 @@ namespace JsonEditorApp
             // Editor panel (right)
             Panel editorPanel = new Panel();
             editorPanel.Dock = DockStyle.Fill;
+
             splitContainer.Panel2.Controls.Add(editorPanel);
 
             Label editorLabel = new Label();
@@ -256,19 +362,21 @@ namespace JsonEditorApp
             presetSelector.SelectedItem = "Item"; // 👈 Default
             headerPanel.Controls.Add(presetSelector);
 
+            // Image & Animation Panels
             Panel imagePanel = new Panel();
-            imagePanel.Dock = DockStyle.Right;
+            imagePanel.Dock = DockStyle.Left;
             imagePanel.Width = 300;
             imagePanel.Padding = new Padding(0, 0, 100, 0);
             editorPanel.Controls.Add(imagePanel);
 
-            animationPanel = new FlowLayoutPanel();
+            FlowLayoutPanel animationPanel = new FlowLayoutPanel();
             animationPanel.Dock = DockStyle.Right;
             animationPanel.Width = 300;
             animationPanel.FlowDirection = FlowDirection.TopDown;
             animationPanel.AutoScroll = true;
+            animationPanel.Name = "animationPanel";
             animationPanel.WrapContents = false;
-            editorPanel.Controls.Add(animationPanel);
+            splitContainer.Panel2.Controls.Add(animationPanel);
 
             nameTextBox = new TextBox();
             nameTextBox.Name = "propertyNameTextBox";
@@ -289,8 +397,28 @@ namespace JsonEditorApp
             // Update recent files
             UpdateRecentFilesMenu();
 
-            // Color scheme
-            Theme.ApplyTheme(Controls.Owner);
+            return splitContainer;
+        }
+
+        private void OpenFileInNewTab(string filePath)
+        {
+            if (string.IsNullOrEmpty(filePath) || !File.Exists(filePath)) return;
+
+            // Create a new tab with an empty JSON object for now
+            TabPage newTab = CreateNewEditorTab(Path.GetFileName(filePath), new JObject(), filePath);
+
+            // Get the editor context of the newly created tab
+            EditorContext context = newTab.Tag as EditorContext;
+            if (context == null) return;
+
+            // Load the JSON and images into the new tab's context
+            OpenFile(filePath);
+        }
+
+
+        private Control CreateEditorUI(string filePath)
+        {
+            return SetupEditor();
         }
 
         private void UpdateRecentFilesMenu()
@@ -1063,60 +1191,43 @@ namespace JsonEditorApp
             try
             {
                 string fileContent = File.ReadAllText(filePath);
-                jsonData = JObject.Parse(fileContent);
-                currentFilePath = filePath;
-                fileNameLabel.Text = "Editing: " + Path.GetFileName(currentFilePath);
-                RecentFiles.Add(currentFilePath);
+                JObject jsonData = JObject.Parse(fileContent);
 
-                // Detect matching PNG files
-                string jsonDirectory = Path.GetDirectoryName(currentFilePath);
-                string jsonFileNameWithoutExt = Path.GetFileNameWithoutExtension(currentFilePath);
+                // Get current tab
+                TabControl tabControl = this.Controls.Find("fileTabControl", true)[0] as TabControl;
+                TabPage selectedTab = tabControl.SelectedTab;
 
-                // Get base image (e.g., Helmet.png)
-                string baseImagePath = Path.Combine(jsonDirectory, jsonFileNameWithoutExt + ".png");
+                if (selectedTab == null || selectedTab.Text == "+")
+                    return; // Don't allow opening into the + tab
 
-                // Get all images like Helmet_Head.png, Helmet_Body.png, etc.
-                string[] extraImagePaths = Directory.GetFiles(jsonDirectory, jsonFileNameWithoutExt + "_*.png");
+                selectedTab.Text = Path.GetFileName(filePath); // Update tab title
 
-                spriteAnimation?.Stop(); // If you had a single one before
-
-                // Stop and clear previous animations
-                foreach (var anim in animationLayers)
-                    anim.Stop();
-
-                animationLayers.Clear();
-                animationPanel.Controls.Clear();
-
-                List<string> allImages = new List<string>();
-
-                if (File.Exists(baseImagePath))
-                    allImages.Add(baseImagePath);
-
-                allImages.AddRange(extraImagePaths.OrderBy(p => p));
-
-                if (allImages.Count > 0)
+                // Get or create the editor context from the tab
+                EditorContext context = selectedTab.Tag as EditorContext;
+                if (context == null)
                 {
-                    foreach (string imagePath in allImages)
-                    {
-                        PixelArtPictureBox picBox = new PixelArtPictureBox();
-                        picBox.Size = new Size(256, 256);
-                        picBox.Margin = new Padding(5);
-                        picBox.BackColor = Color.DarkGray; 
-
-                        animationPanel.Controls.Add(picBox);
-
-                        var animation = new SpriteAnimation(picBox, imagePath);
-                        animationLayers.Add(animation);
-                    }
-                }
-                else
-                {
-                    // no image
+                    context = new EditorContext();
+                    selectedTab.Tag = context;
                 }
 
+                // Make sure the tab has an Editor UI
+                if (context.EditorUI == null)
+                {
+                    context.EditorUI = SetupEditor();
+                    selectedTab.Controls.Clear(); // Ensure clean UI
+                    selectedTab.Controls.Add(context.EditorUI);
+                }
+
+                context.Json = jsonData;
+                context.FilePath = filePath;
+                this.jsonData = jsonData;
+
+                // Update UI labels
+                fileNameLabel.Text = "Editing: " + Path.GetFileName(filePath);
                 RecentFiles.Add(filePath);
-                UpdateRecentFilesMenu();
 
+                LoadImagesForFile(context.AnimationPanel, filePath);
+                UpdateRecentFilesMenu();
                 UpdateTreeView();
                 UpdateRawJsonDisplay();
             }
@@ -1125,6 +1236,44 @@ namespace JsonEditorApp
                 MessageBox.Show($"Error opening file: {ex.Message}", "File Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
         }
+
+        private void LoadImagesForFile(FlowLayoutPanel animationPanel, string filePath)
+        {
+            if (string.IsNullOrEmpty(filePath) || animationPanel == null) return;
+
+            // Clear old images for this tab
+            animationPanel.Controls.Clear();
+
+            string jsonDirectory = Path.GetDirectoryName(filePath);
+            string jsonFileNameWithoutExt = Path.GetFileNameWithoutExtension(filePath);
+
+            string baseImagePath = Path.Combine(jsonDirectory, jsonFileNameWithoutExt + ".png");
+            string[] extraImagePaths = Directory.GetFiles(jsonDirectory, jsonFileNameWithoutExt + "_*.png");
+
+            List<string> allImages = new List<string>();
+
+            if (File.Exists(baseImagePath))
+                allImages.Add(baseImagePath);
+
+            allImages.AddRange(extraImagePaths.OrderBy(p => p));
+
+            if (allImages.Count > 0)
+            {
+                foreach (string imagePath in allImages)
+                {
+                    PixelArtPictureBox picBox = new PixelArtPictureBox();
+                    picBox.Size = new Size(256, 256);
+                    picBox.Margin = new Padding(5);
+                    picBox.BackColor = Color.DarkGray;
+
+                    animationPanel.Controls.Add(picBox); // 🔥 Ensures image is added to the right panel
+
+                    var animation = new SpriteAnimation(picBox, imagePath);
+                    animationLayers.Add(animation);
+                }
+            }
+        }
+
 
         private void SaveFile(object sender, EventArgs e)
         {

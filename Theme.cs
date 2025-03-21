@@ -2,8 +2,8 @@
 {
     public static Color Background = Color.FromArgb(30, 30, 30);
     public static Color Foreground = Color.White;
-    public static Color MenuBar = Color.FromArgb(25, 25, 25);
     public static Color Panel = Color.FromArgb(50, 50, 50);
+    public static Color MenuBar = Panel;
     public static Color Button = Color.FromArgb(70, 70, 70);
     public static Color Highlight = Color.FromArgb(120, 120, 215);
     public static Color HighlightDark = Color.FromArgb(90, 90, 185);
