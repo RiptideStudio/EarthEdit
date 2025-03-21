@@ -27,8 +27,11 @@ namespace JsonEditorApp
         private ComboBox typeComboBox;
         private Label descriptionLabel;
         private string selectedPropertyPath = null;
+        private JProperty selectedProperty;
+
         private string originalPropertyName = null;
         private TabControl fileTabControl;
+        private string selectedPath = null;
 
         public MainForm()
         {
@@ -424,15 +427,10 @@ namespace JsonEditorApp
             valueTextBox = new TextBox();
             valueTextBox.Name = "propertyValueTextBox";
 
-            typeComboBox = new ComboBox();
-            typeComboBox.Name = "propertyTypeComboBox";
-
             // Add tooltips
             toolTip.SetToolTip(enforcePresetCheckbox, "Whether you can edit the JSON files freely, unbound by Earthward data schemas");
             toolTip.SetToolTip(presetSelector, "The type of data you want to make. This defines what properties you can and can't add");
-
-            
-         
+  
             // Update recent files
             UpdateRecentFilesMenu();
 
@@ -564,11 +562,42 @@ namespace JsonEditorApp
             expandedPaths.Clear();
             SaveExpandedNodes(treeView.Nodes);
 
+            // 🔽 Save the selected path
+            if (treeView.SelectedNode != null)
+                selectedPath = treeView.SelectedNode.Tag as string;
+            else
+                selectedPath = null;
             treeView.BeginUpdate();
+
             treeView.Nodes.Clear();
             PopulateTreeView(treeView.Nodes, jsonData);
             RestoreExpandedNodes(treeView.Nodes);
+
+            // 🔽 Restore selected node
+            if (!string.IsNullOrEmpty(selectedPath))
+            {
+                TreeNode nodeToSelect = FindNodeByPath(treeView.Nodes, selectedPath);
+                if (nodeToSelect != null)
+                {
+                    treeView.SelectedNode = nodeToSelect;
+                    treeView.SelectedNode.EnsureVisible(); // Optional: scrolls to it
+                }
+            }
             treeView.EndUpdate();
+        }
+
+        private TreeNode FindNodeByPath(TreeNodeCollection nodes, string path)
+        {
+            foreach (TreeNode node in nodes)
+            {
+                if (node.Tag as string == path)
+                    return node;
+
+                TreeNode found = FindNodeByPath(node.Nodes, path);
+                if (found != null)
+                    return found;
+            }
+            return null;
         }
 
         private void PropertiesTreeView_DragDrop(object sender, DragEventArgs e)
@@ -659,13 +688,58 @@ namespace JsonEditorApp
             }
             return string.Empty;
         }
+        private void NameTextBox_TextChanged(object sender, EventArgs e)
+        {
+            TextBox nameTextBox = sender as TextBox;
+            string newName = nameTextBox.Text;
+
+            if (selectedProperty == null || selectedProperty.Parent is not JObject parentObj)
+                return;
+
+            // Prevent renaming array elements like [0]
+            if (newName.StartsWith("[") && newName.EndsWith("]")) return;
+
+            // Prevent duplicate key
+            if (parentObj.Property(newName) != null && parentObj.Property(newName) != selectedProperty)
+                return;
+
+            // Replace the property in the JObject
+            JProperty newProp = new JProperty(newName, selectedProperty.Value);
+            parentObj.Remove(selectedProperty.Name);
+            parentObj.Add(newProp);
+
+            selectedProperty = newProp; // Update the reference
+            selectedPropertyPath = selectedPropertyPath.Substring(0, selectedPropertyPath.LastIndexOf('.') + 1) + newName;
+
+            UpdateRawJsonDisplay();
+            // Update the selected TreeNode to show the new name
+            TreeView treeView = fileTabControl.SelectedTab.Controls.Find("propertiesTreeView", true).FirstOrDefault() as TreeView;
+            TreeNode node = treeView?.SelectedNode;
+
+            if (node != null)
+            {
+                // Update display text (value included if needed)
+                string valueText = selectedProperty.Value is JValue jv ? jv.ToString() : selectedProperty.Value.Type.ToString();
+                node.Text = $"{newName}: {valueText}";
+
+                // Update the tag (path)
+                // Rebuild tag if it's a deep path
+                int lastDot = selectedPropertyPath.LastIndexOf('.');
+                selectedPropertyPath = lastDot >= 0
+                    ? selectedPropertyPath.Substring(0, lastDot + 1) + newName
+                    : newName;
+
+                node.Tag = selectedPropertyPath;
+            }
+
+        }
+
 
         private void PropertiesTreeView_AfterSelect(object sender, TreeViewEventArgs e)
         {
-            if (e.Node?.Tag == null) return;
-
             string path = e.Node.Tag.ToString();
             JToken token = GetTokenAtPath(path);
+            selectedPropertyPath = path;
 
             if (token != null)
             {
@@ -691,10 +765,16 @@ namespace JsonEditorApp
 
                 Control newControl = null; // Holds the new control
 
-                // 🚀 Determine the value type
-                if (token is JValue jValue)
+                // Determine the value type
+                if (token is JValue jValue && token.Parent is JProperty prop)
                 {
-                    string selectedType = jValue.Type switch
+                    selectedProperty = prop;
+
+                    nameTextBox.TextChanged -= NameTextBox_TextChanged;
+                    nameTextBox.TextChanged += NameTextBox_TextChanged;
+
+                    string selectedType;
+                    selectedType = jValue.Type switch
                     {
                         JTokenType.String => "String",
                         JTokenType.Integer or JTokenType.Float => "Number",
@@ -705,27 +785,42 @@ namespace JsonEditorApp
                         _ => "Unknown"
                     };
 
-                    // ✅ Ensure the combo box updates to reflect the correct type
-                    typeComboBox.SelectedIndex = typeComboBox.Items.IndexOf(selectedType);
+                    string type = jValue.Type.ToString();
+                    typeComboBox.SelectedItem = type;
 
-                    if (selectedType == "Boolean")
+                    if (type == "Boolean")
                     {
                         // 🚀 Replace with a CheckBox for boolean values
                         CheckBox boolCheckBox = new CheckBox
                         {
                             Name = "propertyValueCheckBox",
                             Checked = jValue.Value<bool>(), // Set to actual JSON value
-                            Location = new Point(110, 70),
+                            Location = new Point(110, 72),
                             AutoSize = true
                         };
-
-                        boolCheckBox.CheckedChanged += (s, ev) =>
+                        boolCheckBox.CheckedChanged += (s, ev) => UpdatePropertyFromControl(path, boolCheckBox.Checked);
+                        newControl = boolCheckBox;
+                    }
+                    else if (selectedType == "Number")
+                    {
+                        // 🚀 Use a NumericUpDown for numbers to ensure correct formatting
+                        NumericUpDown numberBox = new NumericUpDown
                         {
-                            UpdatePropertyFromControl(path, boolCheckBox.Checked);
-                            UpdateTreeView();  // ✅ Refresh the tree view
+                            Name = "propertyValueCheckBox",
+                            Location = new Point(110, 70),
+                            Size = new Size(200, 20),
+                            DecimalPlaces = token.Type == JTokenType.Float ? 2 : 0, // ✅ Set decimal places correctly
+                            Minimum = decimal.MinValue,
+                            Maximum = decimal.MaxValue,
+                            Value = Convert.ToDecimal(jValue.Value) // ✅ Preserve the number format
                         };
 
-                        newControl = boolCheckBox;
+                        numberBox.ValueChanged += (s, ev) =>
+                        {
+                            UpdatePropertyFromControl(path, numberBox.Value);
+                        };
+
+                        newControl = numberBox;
                     }
                     else
                     {
@@ -734,18 +829,12 @@ namespace JsonEditorApp
                         {
                             Name = "propertyValueTextBox",
                             Location = new Point(110, 70),
-                            Size = new Size(200, 60),  // ⬆ Increased Height to 60px
-                            Multiline = true,          // ✅ Allows multiple lines
-                            ScrollBars = ScrollBars.Vertical, // ✅ Adds a scrollbar if needed
-                            Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right // ✅ Allows dynamic resizing
+                            Size = new Size(200, 20),
+                            Text = jValue.Value?.ToString() ?? "",
+                            Height = 100,
+                            Multiline = true
                         };
-
-                        valueTextBox.TextChanged += (s, ev) =>
-                        {
-                            UpdatePropertyFromControl(path, valueTextBox.Text);
-                            UpdateTreeView();
-                        };
-
+                        valueTextBox.TextChanged += (s, ev) => UpdatePropertyFromControl(path, valueTextBox.Text);
                         newControl = valueTextBox;
                     }
                 }
@@ -754,20 +843,42 @@ namespace JsonEditorApp
                 if (newControl != null)
                 {
                     editorPanel.Controls.Add(newControl);
-                    newControl.BringToFront(); // Ensure it is visible
+                    newControl.BringToFront();
                 }
             }
         }
 
-
         private void UpdatePropertyFromControl(string path, object newValue)
         {
             JToken token = GetTokenAtPath(path);
-        
-            UpdateRawJsonDisplay();
-            UpdateTreeView();
-        }
+            if (token != null && token.Parent is JProperty property)
+            {
+                if (newValue is bool boolValue)
+                {
+                    property.Value = new JValue(boolValue);
+                }
+                else if (newValue is int || newValue is float || newValue is double)
+                {
+                    property.Value = new JValue(Convert.ToDouble(newValue));
+                }
+                else
+                {
+                    property.Value = new JValue(newValue.ToString());
+                }
 
+                // Update the selected TreeNode's text (if applicable)
+                TreeView treeView = fileTabControl.SelectedTab.Controls.Find("propertiesTreeView", true).FirstOrDefault() as TreeView;
+                TreeNode node = treeView?.SelectedNode;
+
+                if (node != null)
+                {
+                    string valueText = selectedProperty.Value is JValue jv ? GetDisplayValueForTreeNode(jv) : selectedProperty.Value.Type.ToString();
+                    node.Text = $"{selectedProperty.Name}: {valueText}";
+                }
+
+                UpdateRawJsonDisplay();
+            }
+        }
 
         private JToken GetTokenAtPath(string path)
         {
@@ -1025,22 +1136,11 @@ namespace JsonEditorApp
 
         private void AddProperty_Click(object sender, EventArgs e)
         {
-            if (fileTabControl.SelectedTab == null) return; // 🚀 Ensure a tab is selected
+            TreeView treeView = this.Controls.Find("propertiesTreeView", true)[0] as TreeView;
+            ComboBox presetSelector = this.Controls.Find("presetSelector", true)[0] as ComboBox;
+            CheckBox enforcePresetCheckbox = this.Controls.Find("enforcePresetCheckbox", true)[0] as CheckBox;
 
-            // Find the controls **inside the selected tab**
-            TreeView treeView = fileTabControl.SelectedTab.Controls.Find("propertiesTreeView", true).FirstOrDefault() as TreeView;
-            ComboBox presetSelector = fileTabControl.SelectedTab.Controls.Find("presetSelector", true).FirstOrDefault() as ComboBox;
-            CheckBox enforcePresetCheckbox = fileTabControl.SelectedTab.Controls.Find("enforcePresetCheckbox", true).FirstOrDefault() as CheckBox;
-
-            if (treeView == null) return; // 🚀 Prevents crash if treeView is missing
-
-            // Ensure we fetch JSON data for the correct tab
-            EditorContext context = fileTabControl.SelectedTab.Tag as EditorContext;
-            if (context == null) return; // 🚀 Prevents crash if no JSON context exists
-
-            JObject jsonData = context.Json; // 🚀 Use the correct tab's JSON data
             string parentPath = "";
-
             if (treeView.SelectedNode != null && treeView.SelectedNode.Tag != null)
             {
                 string selectedPath = treeView.SelectedNode.Tag.ToString();
