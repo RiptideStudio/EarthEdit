@@ -63,3 +63,48 @@
 
 }
 
+public class DarkMenuRenderer : ToolStripProfessionalRenderer
+{
+    public DarkMenuRenderer() : base(new DarkMenuColorTable()) { }
+
+    protected override void OnRenderMenuItemBackground(ToolStripItemRenderEventArgs e)
+    {
+        Graphics g = e.Graphics;
+        Rectangle rect = new Rectangle(Point.Empty, e.Item.Size);
+
+        if (e.Item.Selected || e.Item.Pressed)
+        {
+            // 🔹 Make sure "File" never turns white
+            g.FillRectangle(new SolidBrush(Color.FromArgb(60, 60, 65)), rect);
+            e.Item.ForeColor = Color.WhiteSmoke;
+        }
+        else
+        {
+            g.FillRectangle(new SolidBrush(Color.FromArgb(45, 45, 48)), rect);
+            e.Item.ForeColor = Color.WhiteSmoke;
+        }
+
+        base.OnRenderMenuItemBackground(e);
+    }
+
+    protected override void OnRenderItemText(ToolStripItemTextRenderEventArgs e)
+    {
+        e.TextColor = Color.WhiteSmoke; // Force white text
+        base.OnRenderItemText(e);
+    }
+}
+
+public class DarkMenuColorTable : ProfessionalColorTable
+{
+    public override Color MenuItemSelected => Color.FromArgb(60, 60, 65); // Dark hover
+    public override Color MenuItemBorder => Color.FromArgb(106, 130, 173); // VS Purple (#6A0DAD)
+    public override Color MenuItemSelectedGradientBegin => Color.FromArgb(50, 50, 55);
+    public override Color MenuItemSelectedGradientEnd => Color.FromArgb(50, 50, 55);
+    public override Color ToolStripDropDownBackground => Color.FromArgb(45, 45, 48); // Dark background
+    public override Color MenuBorder => Color.FromArgb(30, 30, 30);
+
+    // Remove the left white strip (gradient margin)
+    public override Color ImageMarginGradientBegin => Color.FromArgb(45, 45, 48);
+    public override Color ImageMarginGradientMiddle => Color.FromArgb(45, 45, 48);
+    public override Color ImageMarginGradientEnd => Color.FromArgb(45, 45, 48);
+}
