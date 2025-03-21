@@ -1,0 +1,69 @@
+# Build output
+bin/
+obj/
+
+# User-specific files
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+.vs/
+*.vsidx
+
+# Rider / JetBrains Rider
+.idea/
+*.sln.iml
+
+# VS Code
+.vscode/
+
+# Logs
+*.log
+
+# System files
+Thumbs.db
+Desktop.ini
+
+# OS-generated files
+.DS_Store
+ehthumbs.db
+Icon?
+._*
+
+# Temp files
+/tmp/
+/env/
+/.env
+*.tmp
+*.bak
+*.swp
+
+# NuGet Packages
+*.nupkg
+packages/
+project.lock.json
+project.fragment.lock.json
+
+# Build results
+*.exe
+*.dll
+*.pdb
+
+# Test results
+TestResults/
+*.trx
+
+# Publish folders
+publish/
+*.publish.xml
+
+# JSON preview artifacts (if any)
+*.cache.json
+*.preview.json
+
+# Optional: ignore sprite cache/images if generated
+/Images/cache/
+/Sprites/temp/
+
+# Ignore local recent files list
+recent.json
