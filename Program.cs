@@ -64,7 +64,8 @@ namespace JsonEditorApp
             this.MainMenuStrip = menuStrip;
 
             ToolStripMenuItem fileMenu = new ToolStripMenuItem("File");
-            ToolStripMenuItem newMenuItem = new ToolStripMenuItem("New", null, new EventHandler(NewFile));
+            ToolStripMenuItem newMenuItem = new ToolStripMenuItem("New Json", null, new EventHandler(NewFile));
+            ToolStripMenuItem newTab = new ToolStripMenuItem("New Tab", null, new EventHandler(NewTab));
             ToolStripMenuItem openMenuItem = new ToolStripMenuItem("Open", null, new EventHandler(OpenFile));
             ToolStripMenuItem saveMenuItem = new ToolStripMenuItem("Save", null, new EventHandler(SaveFile));
             ToolStripMenuItem saveAsMenuItem = new ToolStripMenuItem("Save As", null, new EventHandler(SaveFileAs));
@@ -72,43 +73,88 @@ namespace JsonEditorApp
 
             fileMenu.DropDownItems.AddRange(new ToolStripItem[]
             {
-                newMenuItem,
                 openMenuItem,
                 saveMenuItem,
                 saveAsMenuItem,
+                recentFilesMenuItem,
+                newMenuItem,
+                newTab,
                 new ToolStripSeparator(),
-                recentFilesMenuItem
             });
 
             menuStrip.Items.Add(fileMenu);
             layoutPanel.Controls.Add(menuStrip, 0, 0);
             this.MainMenuStrip = menuStrip;
 
+            // Create a container panel for tabs + button
+            Panel tabPanel = new Panel();
+            tabPanel.Height = 0;
+            tabPanel.Dock = DockStyle.Fill;
+            tabPanel.BackColor = Color.Black; // Match UI theme
+            layoutPanel.Controls.Add(tabPanel, 0, 0);
+
+            // Create TabControl
             fileTabControl = new TabControl();
             fileTabControl.Dock = DockStyle.Fill;
             fileTabControl.Name = "fileTabControl";
-            fileTabControl.DrawMode = TabDrawMode.OwnerDrawFixed;  // ✅ Custom Draw
-            fileTabControl.ItemSize = new Size(150, 25);  // Size of tabs
-            fileTabControl.SizeMode = TabSizeMode.Fixed;  // Make sure sizes apply
+            fileTabControl.DrawMode = TabDrawMode.OwnerDrawFixed;
+            fileTabControl.ItemSize = new Size(125, 25);
+            fileTabControl.SizeMode = TabSizeMode.Normal;
+            fileTabControl.Appearance = TabAppearance.Normal;
+
+            // Attach event handlers
             fileTabControl.Selecting += FileTabControl_Selecting;
             fileTabControl.DrawItem += FileTabControl_DrawItem;
 
-            layoutPanel.Controls.Add(fileTabControl, 0, 1);
+            // Create Context Menu
+            ContextMenuStrip tabContextMenu = new ContextMenuStrip();
+            tabContextMenu.Items.Add("Close", null, CloseTab_Click);
+            tabContextMenu.Items.Add("Close All", null, CloseAllTabs_Click);
 
-            // Add the initial + tab
-            var plusTab = new TabPage("+");
-            fileTabControl.TabPages.Add(plusTab);
-            fileTabControl.Appearance = TabAppearance.Normal;
-            fileTabControl.SizeMode = TabSizeMode.Normal;
-            fileTabControl.ItemSize = new Size(0, 24);
+            // Attach event to detect right-click
+            fileTabControl.MouseUp += (s, e) =>
+            {
+                if (e.Button == MouseButtons.Right)
+                {
+                    for (int i = 0; i < fileTabControl.TabPages.Count; i++)
+                    {
+                        Rectangle tabRect = fileTabControl.GetTabRect(i);
+                        if (tabRect.Contains(e.Location))
+                        {
+                            fileTabControl.SelectedIndex = i; // Select the tab that was right-clicked
+                            tabContextMenu.Show(fileTabControl, e.Location); // Show the context menu
+                            return;
+                        }
+                    }
+                }
+            };
+
+            // Add TabControl inside the panel
+            tabPanel.Controls.Add(fileTabControl);
+
+            // Finally, add the TabControl to the main layout
+            layoutPanel.Controls.Add(tabPanel, 0, 1);
 
             menuStrip.RenderMode = ToolStripRenderMode.Professional;
             menuStrip.BackColor = Color.FromArgb(30, 30, 30);
             layoutPanel.Margin = Padding.Empty;
             layoutPanel.Padding = Padding.Empty;
             layoutPanel.BackColor = Color.FromArgb(30, 30, 30);
+            layoutPanel.Controls.Add(fileTabControl, 0, 1);
 
             Theme.ApplyTheme(this);
+        }
+        private void CloseTab_Click(object sender, EventArgs e)
+        {
+            if (fileTabControl.SelectedTab != null)
+            {
+                fileTabControl.TabPages.Remove(fileTabControl.SelectedTab);
+            }
+        }
+
+        private void CloseAllTabs_Click(object sender, EventArgs e)
+        {
+            fileTabControl.TabPages.Clear(); // Remove all tabs
         }
 
         private void FileTabControl_DrawItem(object sender, DrawItemEventArgs e)
@@ -143,20 +189,18 @@ namespace JsonEditorApp
             }
         }
 
-
         private void FileTabControl_Selecting(object sender, TabControlCancelEventArgs e)
         {
             TabControl tabControl = sender as TabControl;
-            if (e.TabPage.Text == "+")
-            {
-                e.Cancel = true; // Prevent selecting the + tab
-                OpenNewTab();
-            }
         }
 
-        private void OpenNewTab()
+        private TabPage OpenNewTab()
         {
-            CreateNewEditorTab("Untitled", null, null);
+            return CreateNewEditorTab("Untitled", null, null);
+        }
+        private void NewTab(object sender, EventArgs e)
+        {
+            CreateNewEditorTab("Untitled", new JObject());
         }
 
         private TabPage CreateNewEditorTab(string title, JObject json, string filePath = null)
@@ -180,7 +224,7 @@ namespace JsonEditorApp
             tabPage.Controls.Add(editorUI);
 
             TabControl tabControl = this.Controls.Find("fileTabControl", true)[0] as TabControl;
-            tabControl.TabPages.Insert(tabControl.TabPages.Count - 1, tabPage);
+            tabControl.TabPages.Insert(tabControl.TabPages.Count, tabPage);
             tabControl.SelectedTab = tabPage;
             Theme.ApplyTheme(tabControl);
 
@@ -202,6 +246,7 @@ namespace JsonEditorApp
             // Create a Panel to Wrap the Label and TreeView
             Panel treeContainerPanel = new Panel();
             treeContainerPanel.Dock = DockStyle.Fill; // Ensure it expands fully
+            treeContainerPanel.Padding = new Padding(10,0,0,20);
             propertiesPanel.Controls.Add(treeContainerPanel);
 
             // JSON Properties Label
@@ -211,11 +256,6 @@ namespace JsonEditorApp
             headerPanel.FlowDirection = FlowDirection.LeftToRight;
             propertiesPanel.Controls.Add(headerPanel);
 
-            fileNameLabel = new Label();
-            fileNameLabel.Text = "Editing: sample.json";
-            fileNameLabel.Font = new System.Drawing.Font("Segoe UI", 9, System.Drawing.FontStyle.Bold);
-            fileNameLabel.Padding = new Padding(5);
-            fileNameLabel.Dock = DockStyle.Top;
             headerPanel.Padding = new Padding(5);
             headerPanel.Controls.Add(fileNameLabel);
 
@@ -235,9 +275,10 @@ namespace JsonEditorApp
             // Button panel for property management
             FlowLayoutPanel buttonPanel = new FlowLayoutPanel();
             buttonPanel.Dock = DockStyle.Bottom;
-            buttonPanel.Height = 40;
+            buttonPanel.Height = 50;
             buttonPanel.Name = "buttonPanel";
             buttonPanel.FlowDirection = FlowDirection.LeftToRight;
+            buttonPanel.Padding = new Padding(10,0,0,0);
             propertiesPanel.Controls.Add(buttonPanel);
 
             Button addPropertyButton = new Button();
@@ -254,16 +295,12 @@ namespace JsonEditorApp
 
             // Editor panel (right)
             Panel editorPanel = new Panel();
-            editorPanel.Dock = DockStyle.Fill;
+            editorPanel.Dock = DockStyle.None;
+            editorPanel.AutoSize = true;
+            editorPanel.Width = 500;
+            editorPanel.Padding = new Padding(10);
 
             splitContainer.Panel2.Controls.Add(editorPanel);
-
-            Label editorLabel = new Label();
-            editorLabel.Text = "Property Editor";
-            editorLabel.Dock = DockStyle.Top;
-            editorLabel.Font = new System.Drawing.Font("Segoe UI", 9, System.Drawing.FontStyle.Bold);
-            editorLabel.Padding = new Padding(5);
-            editorPanel.Controls.Add(editorLabel);
 
             Label propertyNameLabel = new Label();
             propertyNameLabel.Text = "Property Name:";
@@ -272,9 +309,9 @@ namespace JsonEditorApp
 
             TextBox propertyNameTextBox = new TextBox();
             propertyNameTextBox.Name = "propertyNameTextBox";
-            propertyNameTextBox.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
+            propertyNameTextBox.Anchor = AnchorStyles.Top | AnchorStyles.Left; // Prevents auto-stretching
             propertyNameTextBox.Location = new System.Drawing.Point(110, 40);
-            propertyNameTextBox.Size = new System.Drawing.Size(300, 20);
+            propertyNameTextBox.Size = new System.Drawing.Size(200, 20); // Manually sets width
             editorPanel.Controls.Add(propertyNameTextBox);
 
             Label propertyValueLabel = new Label();
@@ -299,7 +336,7 @@ namespace JsonEditorApp
             propertyTypeComboBox.Name = "propertyTypeComboBox";
             propertyTypeComboBox.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
             propertyTypeComboBox.Location = new System.Drawing.Point(110, 180);
-            propertyTypeComboBox.Size = new System.Drawing.Size(300, 20);
+            propertyTypeComboBox.Size = new System.Drawing.Size(100, 20);
             propertyTypeComboBox.DropDownStyle = ComboBoxStyle.DropDownList;
             propertyTypeComboBox.Items.AddRange(new string[] { "String", "Number", "Boolean", "Object", "Array", "Null" });
             propertyTypeComboBox.SelectedIndex = 0;
@@ -313,13 +350,15 @@ namespace JsonEditorApp
 
             TextBox rawJsonTextBox = new TextBox();
             rawJsonTextBox.Name = "rawJsonTextBox";
-            rawJsonTextBox.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right | AnchorStyles.Bottom;
+            rawJsonTextBox.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
             rawJsonTextBox.Location = new System.Drawing.Point(10, 280);
-            rawJsonTextBox.Size = new System.Drawing.Size(450, 200);
+            rawJsonTextBox.Size = new System.Drawing.Size(450, 260);
             rawJsonTextBox.Multiline = true;
             rawJsonTextBox.ScrollBars = ScrollBars.Vertical;
             rawJsonTextBox.ReadOnly = true;
             editorPanel.Controls.Add(rawJsonTextBox);
+            rawJsonTextBox.BackColor = Theme.Background;
+            rawJsonTextBox.ForeColor = Theme.Foreground;
 
             Button formatJsonButton = new Button();
             formatJsonButton.Text = "Format JSON";
@@ -376,26 +415,27 @@ namespace JsonEditorApp
             animationPanel.AutoScroll = true;
             animationPanel.Name = "animationPanel";
             animationPanel.WrapContents = false;
+            animationPanel.Padding = new Padding(20);
             splitContainer.Panel2.Controls.Add(animationPanel);
 
             nameTextBox = new TextBox();
             nameTextBox.Name = "propertyNameTextBox";
-            editorPanel.Controls.Add(nameTextBox);
 
             valueTextBox = new TextBox();
             valueTextBox.Name = "propertyValueTextBox";
-            editorPanel.Controls.Add(valueTextBox);
 
             typeComboBox = new ComboBox();
             typeComboBox.Name = "propertyTypeComboBox";
-            editorPanel.Controls.Add(typeComboBox);
 
             // Add tooltips
             toolTip.SetToolTip(enforcePresetCheckbox, "Whether you can edit the JSON files freely, unbound by Earthward data schemas");
             toolTip.SetToolTip(presetSelector, "The type of data you want to make. This defines what properties you can and can't add");
 
+            
+         
             // Update recent files
             UpdateRecentFilesMenu();
+
 
             return splitContainer;
         }
@@ -414,7 +454,6 @@ namespace JsonEditorApp
             // Load the JSON and images into the new tab's context
             OpenFile(filePath);
         }
-
 
         private Control CreateEditorUI(string filePath)
         {
@@ -444,7 +483,7 @@ namespace JsonEditorApp
                 {
                     if (File.Exists(filePath))
                     {
-                        OpenFile(filePath);
+                        OpenFileInNewTab(filePath);
                     }
                     else
                     {
@@ -493,10 +532,34 @@ namespace JsonEditorApp
                 RestoreExpandedNodes(node.Nodes);
             }
         }
+        private void propertiesTreeView_KeyDown(object sender, KeyEventArgs e)
+        {
+            if (e.KeyCode == Keys.Delete)
+            {
+                TreeView treeView = fileTabControl.SelectedTab.Controls.Find("propertiesTreeView", true).FirstOrDefault() as TreeView;
 
+                if (treeView.SelectedNode != null)
+                {
+                    // Assume each node's Tag holds a JProperty representing the JSON property.
+                    if (treeView.SelectedNode.Tag is JProperty jProp)
+                    {
+                        // Remove the property from its parent JSON object.
+                        jProp.Remove();
+                    }
+
+                    // Refresh the TreeView and raw JSON display.
+                    UpdateTreeView();
+                    UpdateRawJsonDisplay();
+                }
+            }
+        }
         private void UpdateTreeView()
         {
-            TreeView treeView = this.Controls.Find("propertiesTreeView", true)[0] as TreeView;
+            if (fileTabControl.SelectedTab == null) return;
+
+            // Find the TreeView inside the selected tab's controls
+            TreeView treeView = fileTabControl.SelectedTab.Controls.Find("propertiesTreeView", true).FirstOrDefault() as TreeView;
+            if (treeView == null) return; // Ensure a TreeView exists in the tab
 
             expandedPaths.Clear();
             SaveExpandedNodes(treeView.Nodes);
@@ -507,7 +570,6 @@ namespace JsonEditorApp
             RestoreExpandedNodes(treeView.Nodes);
             treeView.EndUpdate();
         }
-
 
         private void PropertiesTreeView_DragDrop(object sender, DragEventArgs e)
         {
@@ -600,80 +662,112 @@ namespace JsonEditorApp
 
         private void PropertiesTreeView_AfterSelect(object sender, TreeViewEventArgs e)
         {
-            if (e.Node.Tag != null)
+            if (e.Node?.Tag == null) return;
+
+            string path = e.Node.Tag.ToString();
+            JToken token = GetTokenAtPath(path);
+
+            if (token != null)
             {
-                string path = e.Node.Tag.ToString();
-                JToken token = GetTokenAtPath(path);
+                TextBox nameTextBox = this.Controls.Find("propertyNameTextBox", true)[0] as TextBox;
+                Control oldValueControl = this.Controls.Find("propertyValueTextBox", true).FirstOrDefault()
+                                          ?? this.Controls.Find("propertyValueCheckBox", true).FirstOrDefault();
+                ComboBox typeComboBox = this.Controls.Find("propertyTypeComboBox", true)[0] as ComboBox;
+                Panel editorPanel = nameTextBox.Parent as Panel;
 
-                if (token != null)
+                // Get property name
+                string[] pathParts = path.Split('.');
+                string propertyName = pathParts[pathParts.Length - 1];
+
+                // Handle name input
+                nameTextBox.Text = propertyName;
+                nameTextBox.ReadOnly = propertyName.StartsWith("[") && propertyName.EndsWith("]");
+
+                // Remove old value field if it exists
+                if (oldValueControl != null)
                 {
-                    nameTextBox = this.Controls.Find("propertyNameTextBox", true)[0] as TextBox;
-                    valueTextBox = this.Controls.Find("propertyValueTextBox", true)[0] as TextBox;
-                    typeComboBox = this.Controls.Find("propertyTypeComboBox", true)[0] as ComboBox;
+                    editorPanel.Controls.Remove(oldValueControl);
+                }
 
-                    // Get the property name
-                    string[] pathParts = path.Split('.');
-                    string propertyName = pathParts[pathParts.Length - 1];
+                Control newControl = null; // Holds the new control
 
-                    // Check if it's an array index
-                    if (propertyName.StartsWith("[") && propertyName.EndsWith("]"))
+                // 🚀 Determine the value type
+                if (token is JValue jValue)
+                {
+                    string selectedType = jValue.Type switch
                     {
-                        // For arrays, use the index as name
-                        nameTextBox.Text = propertyName;
-                        nameTextBox.ReadOnly = true;
+                        JTokenType.String => "String",
+                        JTokenType.Integer or JTokenType.Float => "Number",
+                        JTokenType.Boolean => "Boolean",
+                        JTokenType.Null => "Null",
+                        JTokenType.Object => "Object",
+                        JTokenType.Array => "Array",
+                        _ => "Unknown"
+                    };
+
+                    // ✅ Ensure the combo box updates to reflect the correct type
+                    typeComboBox.SelectedIndex = typeComboBox.Items.IndexOf(selectedType);
+
+                    if (selectedType == "Boolean")
+                    {
+                        // 🚀 Replace with a CheckBox for boolean values
+                        CheckBox boolCheckBox = new CheckBox
+                        {
+                            Name = "propertyValueCheckBox",
+                            Checked = jValue.Value<bool>(), // Set to actual JSON value
+                            Location = new Point(110, 70),
+                            AutoSize = true
+                        };
+
+                        boolCheckBox.CheckedChanged += (s, ev) =>
+                        {
+                            UpdatePropertyFromControl(path, boolCheckBox.Checked);
+                            UpdateTreeView();  // ✅ Refresh the tree view
+                        };
+
+                        newControl = boolCheckBox;
                     }
                     else
                     {
-                        nameTextBox.Text = propertyName;
-                        nameTextBox.ReadOnly = false;
-                    }
-
-                    selectedPropertyPath = path;
-                    originalPropertyName = propertyName;
-
-                    nameTextBox.TextChanged -= PropertyEditor_Changed;
-                    valueTextBox.TextChanged -= PropertyEditor_Changed;
-                    typeComboBox.SelectedIndexChanged -= PropertyEditor_Changed;
-
-                    nameTextBox.TextChanged += PropertyEditor_Changed;
-                    valueTextBox.TextChanged += PropertyEditor_Changed;
-                    typeComboBox.SelectedIndexChanged += PropertyEditor_Changed;
-
-                    // Set the value and type
-                    if (token is JValue jValue)
-                    {
-                        valueTextBox.Text = jValue.Value?.ToString() ?? "";
-
-                        switch (jValue.Type)
+                        // 🚀 Use a TextBox for everything else
+                        TextBox valueTextBox = new TextBox
                         {
-                            case JTokenType.String:
-                                typeComboBox.SelectedIndex = typeComboBox.Items.IndexOf("String");
-                                break;
-                            case JTokenType.Integer:
-                            case JTokenType.Float:
-                                typeComboBox.SelectedIndex = typeComboBox.Items.IndexOf("Number");
-                                break;
-                            case JTokenType.Boolean:
-                                typeComboBox.SelectedIndex = typeComboBox.Items.IndexOf("Boolean");
-                                break;
-                            case JTokenType.Null:
-                                typeComboBox.SelectedIndex = typeComboBox.Items.IndexOf("Null");
-                                break;
-                        }
+                            Name = "propertyValueTextBox",
+                            Location = new Point(110, 70),
+                            Size = new Size(200, 60),  // ⬆ Increased Height to 60px
+                            Multiline = true,          // ✅ Allows multiple lines
+                            ScrollBars = ScrollBars.Vertical, // ✅ Adds a scrollbar if needed
+                            Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right // ✅ Allows dynamic resizing
+                        };
+
+                        valueTextBox.TextChanged += (s, ev) =>
+                        {
+                            UpdatePropertyFromControl(path, valueTextBox.Text);
+                            UpdateTreeView();
+                        };
+
+                        newControl = valueTextBox;
                     }
-                    else if (token is JObject)
-                    {
-                        valueTextBox.Text = JsonConvert.SerializeObject(token, Formatting.Indented);
-                        typeComboBox.SelectedIndex = typeComboBox.Items.IndexOf("Object");
-                    }
-                    else if (token is JArray)
-                    {
-                        valueTextBox.Text = JsonConvert.SerializeObject(token, Formatting.Indented);
-                        typeComboBox.SelectedIndex = typeComboBox.Items.IndexOf("Array");
-                    }
+                }
+
+                // 🚀 Add new control if created
+                if (newControl != null)
+                {
+                    editorPanel.Controls.Add(newControl);
+                    newControl.BringToFront(); // Ensure it is visible
                 }
             }
         }
+
+
+        private void UpdatePropertyFromControl(string path, object newValue)
+        {
+            JToken token = GetTokenAtPath(path);
+        
+            UpdateRawJsonDisplay();
+            UpdateTreeView();
+        }
+
 
         private JToken GetTokenAtPath(string path)
         {
@@ -931,11 +1025,22 @@ namespace JsonEditorApp
 
         private void AddProperty_Click(object sender, EventArgs e)
         {
-            TreeView treeView = this.Controls.Find("propertiesTreeView", true)[0] as TreeView;
-            ComboBox presetSelector = this.Controls.Find("presetSelector", true)[0] as ComboBox;
-            CheckBox enforcePresetCheckbox = this.Controls.Find("enforcePresetCheckbox", true)[0] as CheckBox;
+            if (fileTabControl.SelectedTab == null) return; // 🚀 Ensure a tab is selected
 
+            // Find the controls **inside the selected tab**
+            TreeView treeView = fileTabControl.SelectedTab.Controls.Find("propertiesTreeView", true).FirstOrDefault() as TreeView;
+            ComboBox presetSelector = fileTabControl.SelectedTab.Controls.Find("presetSelector", true).FirstOrDefault() as ComboBox;
+            CheckBox enforcePresetCheckbox = fileTabControl.SelectedTab.Controls.Find("enforcePresetCheckbox", true).FirstOrDefault() as CheckBox;
+
+            if (treeView == null) return; // 🚀 Prevents crash if treeView is missing
+
+            // Ensure we fetch JSON data for the correct tab
+            EditorContext context = fileTabControl.SelectedTab.Tag as EditorContext;
+            if (context == null) return; // 🚀 Prevents crash if no JSON context exists
+
+            JObject jsonData = context.Json; // 🚀 Use the correct tab's JSON data
             string parentPath = "";
+
             if (treeView.SelectedNode != null && treeView.SelectedNode.Tag != null)
             {
                 string selectedPath = treeView.SelectedNode.Tag.ToString();
@@ -1118,7 +1223,12 @@ namespace JsonEditorApp
 
         private void UpdateRawJsonDisplay()
         {
-            TextBox rawJsonTextBox = this.Controls.Find("rawJsonTextBox", true)[0] as TextBox;
+            if (fileTabControl.SelectedTab == null) return;
+
+            // Find the Raw JSON TextBox inside the selected tab
+            TextBox rawJsonTextBox = fileTabControl.SelectedTab.Controls.Find("rawJsonTextBox", true).FirstOrDefault() as TextBox;
+            if (rawJsonTextBox == null) return; // Ensure the textbox exists
+
             rawJsonTextBox.Text = JsonConvert.SerializeObject(jsonData, Formatting.Indented);
         }
 
@@ -1166,9 +1276,50 @@ namespace JsonEditorApp
 
         private void NewFile(object sender, EventArgs e)
         {
-            if (MessageBox.Show("Create a new file? Any unsaved changes will be lost.", "New File", MessageBoxButtons.YesNo, MessageBoxIcon.Question) == DialogResult.Yes)
+            // 🚀 Ask the user for a file name
+            string fileName = PromptForFileName();
+            if (string.IsNullOrWhiteSpace(fileName)) return; // If canceled, do nothing
+
+            // 🚀 Create an empty JSON object
+            JObject newJson = new JObject();
+
+            // 🚀 Get the file path (Default to Documents folder)
+            string filePath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments), fileName + ".json");
+
+            try
             {
-                InitializeNewJsonObject();
+                // 🚀 Save an empty JSON file
+                File.WriteAllText(filePath, JsonConvert.SerializeObject(newJson, Formatting.Indented));
+
+                // 🚀 Open a new tab with the newly created JSON file
+                CreateNewEditorTab(fileName, newJson, filePath);
+                OpenFile(filePath);
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Error creating file: {ex.Message}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+        }
+        private string PromptForFileName()
+        {
+            using (Form prompt = new Form())
+            {
+                prompt.Width = 300;
+                prompt.Height = 150;
+                prompt.Text = "Enter File Name";
+
+                Label textLabel = new Label() { Left = 20, Top = 20, Text = "File Name:" };
+                TextBox textBox = new TextBox() { Left = 20, Top = 50, Width = 240 };
+                Button confirmation = new Button() { Text = "OK", Left = 160, Width = 100, Top = 80 };
+
+                confirmation.DialogResult = DialogResult.OK;
+                prompt.Controls.Add(textLabel);
+                prompt.Controls.Add(textBox);
+                prompt.Controls.Add(confirmation);
+                prompt.AcceptButton = confirmation;
+                prompt.StartPosition = FormStartPosition.CenterParent;
+
+                return prompt.ShowDialog() == DialogResult.OK ? textBox.Text.Trim() : null;
             }
         }
 
@@ -1214,7 +1365,7 @@ namespace JsonEditorApp
                 if (context.EditorUI == null)
                 {
                     context.EditorUI = SetupEditor();
-                    selectedTab.Controls.Clear(); // Ensure clean UI
+                    selectedTab.Controls.Clear();
                     selectedTab.Controls.Add(context.EditorUI);
                 }
 
@@ -1223,7 +1374,6 @@ namespace JsonEditorApp
                 this.jsonData = jsonData;
 
                 // Update UI labels
-                fileNameLabel.Text = "Editing: " + Path.GetFileName(filePath);
                 RecentFiles.Add(filePath);
 
                 LoadImagesForFile(context.AnimationPanel, filePath);
@@ -1273,7 +1423,6 @@ namespace JsonEditorApp
                 }
             }
         }
-
 
         private void SaveFile(object sender, EventArgs e)
         {

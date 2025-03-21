@@ -35,7 +35,7 @@
 
         }
 
-        if (control is TextBox || control is ComboBox || control is CheckBox)
+        if (control is ComboBox || control is CheckBox)
         {
             control.BackColor = Theme.Panel;
             control.ForeColor = Theme.Foreground;
