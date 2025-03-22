@@ -219,7 +219,7 @@ namespace JsonEditorApp
 
             JObject newJson = BuildJsonFromPreset(schemaName);
 
-            string filePath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments), fileName + ".json");
+            string filePath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, fileName + ".json");
 
             try
             {
@@ -505,9 +505,9 @@ namespace JsonEditorApp
             presetSelector = new ComboBox();
             presetSelector.Name = "presetSelector";
             presetSelector.DropDownStyle = ComboBoxStyle.DropDownList;
-            presetSelector.Items.AddRange(JsonSchemas.Presets.Keys.ToArray());
+            presetSelector.Items.AddRange(JsonSchemas.Schemas.ToArray());
             presetSelector.SelectedIndexChanged += PresetSelector_SelectedIndexChanged;
-            presetSelector.SelectedItem = "Item"; // 👈 Default
+            presetSelector.SelectedItem = "Item";
             headerPanel.Controls.Add(presetSelector);
 
             // Image & Animation Panels
@@ -990,6 +990,26 @@ namespace JsonEditorApp
 
                         newControl = numberBox;
                     }
+                    else if (selectedType == "String" && TryGetEnumOptionsForProperty(propertyName, out var enumOptions))
+                    {
+                        ComboBox comboBox = new ComboBox
+                        {
+                            Name = "propertyValueComboBox",
+                            Location = new Point(110, 70),
+                            Size = new Size(300, 20),
+                            DropDownStyle = ComboBoxStyle.DropDownList
+                        };
+
+                        comboBox.Items.AddRange(enumOptions);
+                        comboBox.SelectedItem = jValue.Value?.ToString() ?? enumOptions.FirstOrDefault();
+
+                        comboBox.SelectedIndexChanged += (s, ev) =>
+                        {
+                            UpdatePropertyFromControl(comboBox.SelectedItem?.ToString());
+                        };
+
+                        newControl = comboBox;
+                    }
                     else
                     {
                         // ✅ Use a TextBox for strings & everything else
@@ -1014,6 +1034,24 @@ namespace JsonEditorApp
                     newControl.BringToFront();
                 }
             }
+        }
+
+        private bool TryGetEnumOptionsForProperty(string propertyName, out string[] enumOptions)
+        {
+            enumOptions = null;
+
+            if (presetSelector?.SelectedItem is string presetName &&
+                JsonSchemas.Properties.TryGetValue(presetName, out var fields))
+            {
+                var field = fields.FirstOrDefault(f => f.Name == propertyName);
+                if (field.EnumOptions != null && field.EnumOptions.Length > 0)
+                {
+                    enumOptions = field.EnumOptions;
+                    return true;
+                }
+            }
+
+            return false;
         }
 
         private void UpdatePropertyFromControl(object newValue)
@@ -1372,19 +1410,24 @@ namespace JsonEditorApp
                 string selectedPreset = presetSelector.SelectedItem.ToString();
                 if (JsonSchemas.Properties.TryGetValue(selectedPreset, out var fields))
                 {
-                    var available = fields.Select(f => f.name).Where(name => !parentObj.ContainsKey(name)).ToList();
+                    var available = fields
+                        .Where(f => !parentObj.ContainsKey(f.Name))
+                        .Select(f => f.Name)
+                        .ToList();
+
                     if (available.Count == 0)
                     {
                         MessageBox.Show("All allowed properties already exist.", "Nothing To Add", MessageBoxButtons.OK, MessageBoxIcon.Information);
                         return;
                     }
 
+
                     newPropertyName = Prompt.ShowDropdown("Add Property", $"Add a variable to your Earthward {presetSelector.SelectedItem}", available);
                     if (string.IsNullOrEmpty(newPropertyName)) return;
 
                     // Add default value from schema
-                    var field = fields.First(f => f.name == newPropertyName);
-                    parentObj[newPropertyName] = JToken.FromObject(field.defaultValue ?? "");
+                    var field = fields.First(f => f.Name == newPropertyName);
+                    parentObj[newPropertyName] = JToken.FromObject(field.DefaultValue ?? "");
                 }
             }
             else 
@@ -1661,7 +1704,7 @@ namespace JsonEditorApp
             JObject newJson = BuildJsonFromPreset("Empty");
 
             // 🚀 Get the file path (Default to Documents folder)
-            string filePath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments), fileName + ".json");
+            string filePath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, fileName + ".json");
 
             try
             {

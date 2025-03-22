@@ -1,4 +1,21 @@
-﻿using Newtonsoft.Json.Linq;
+﻿using JsonMaker.DataTypes;
+using Newtonsoft.Json.Linq;
+
+public class JsonField
+{
+    public string Name { get; set; }
+    public string Type { get; set; }
+    public object DefaultValue { get; set; }
+    public string[] EnumOptions { get; set; } // optional
+
+    public JsonField(string name, string type, object defaultValue, string[] enumOptions = null)
+    {
+        Name = name;
+        Type = type;
+        DefaultValue = defaultValue;
+        EnumOptions = enumOptions;
+    }
+}
 
 static class JsonSchemas
 {
@@ -11,8 +28,7 @@ static class JsonSchemas
             {
                 ("name", "String", ""),
                 ("damage", "Number", 0),
-                ("rarity", "String", "normal"),
-                ("color", "String", "white"),
+                ("rarity", "String", "White"),
                 ("durability", "Number", 0),
                 ("consumable", "Boolean", false),
                 ("projectile", "String", ""),
@@ -67,6 +83,80 @@ static class JsonSchemas
             }
         },
         {
+            "Chestplate",
+            new List<(string, string, object)>
+            {
+                ("name", "String", ""),
+                ("type", "String", "Chestplate"),
+                ("healthBoost", "Number", 6),
+                ("damageBoost", "Number", 1),
+                ("rarity", "String", "White"),
+                ("stackable", "Boolean", false),
+                ("xoffset", "Number", -2)
+            }
+        },
+        {
+            "Helmet",
+            new List<(string, string, object)>
+            {
+                ("name", "String", ""),
+                ("type", "String", "Helmet"),
+                ("healthBoost", "Number", 3),
+                ("damageBoost", "Number", 2),
+                ("rarity", "String", "White"),
+                ("stackable", "Boolean", false)
+            }
+        },
+        {
+            "Shield",
+            new List<(string, string, object)>
+            {
+                ("name", "String", ""),
+                ("type", "String", "Shield"),
+                ("healthBoost", "Number", 3),
+                ("damageBoost", "Number", 1),
+                ("rarity", "String", "White"),
+                ("stackable", "Boolean", false),
+                ("xoffset", "Number", -2)
+            }
+        },
+        {
+            "Amulet",
+            new List<(string, string, object)>
+            {
+                ("name", "String", ""),
+                ("type", "String", "Amulet"),
+                ("healthBoost", "Number", 5),
+                ("rarity", "String", "White"),
+                ("stackable", "Boolean", false),
+                ("xoffset", "Number", -2)
+            }
+        },
+        {
+            "Bag",
+            new List<(string, string, object)>
+            {
+                ("name", "String", ""),
+                ("type", "String", "Bag"),
+                ("bagSlots", "Number", 4),
+                ("rarity", "String", "White"),
+                ("stackable", "Boolean", false),
+                ("xoffset", "Number", -2)
+            }
+        },
+        {
+            "Ring",
+            new List<(string, string, object)>
+            {
+                ("name", "String", ""),
+                ("type", "String", "Ring"),
+                ("damageBoost", "Number", 2),
+                ("rarity", "String", "White"),
+                ("stackable", "Boolean", false),
+                ("xoffset", "Number", -2)
+            }
+        },
+        {
             "Races",
             new List<(string, string, object)>
             {
@@ -93,98 +183,120 @@ static class JsonSchemas
         }
     };
 
-    public static readonly Dictionary<string, List<(string name, string type, object defaultValue)>> Properties
-        = new Dictionary<string, List<(string, string, object)>>()
+    public class JsonField
+    {
+        public string Name { get; }
+        public string Type { get; }
+        public object DefaultValue { get; }
+        public string[] EnumOptions { get; }
+
+        public JsonField(string name, string type, object defaultValue, string[] enumOptions = null)
+        {
+            Name = name;
+            Type = type;
+            DefaultValue = defaultValue;
+            EnumOptions = enumOptions;
+        }
+    }
+
+    public static readonly Dictionary<string, List<JsonField>> Properties = new()
     {
         {
             "Item",
-            new List<(string name, string type, object defaultValue)>
+            new List<JsonField>
             {
-                ("name", "String", ""),
-                ("damage", "Number", 0),
-                ("rarity", "String", "normal"),
-                ("color", "String", "white"),
-                ("durability", "Number", 0),
-                ("maxDurability", "Number", 0),
-                ("consumable", "Boolean", false),
-                ("faceMouse", "Boolean", false),
-                ("projectile", "String", ""),
-                ("useSound", "String", "snd_swing"),
-                ("shootSound", "String", ""),
-                ("frames", "Number", 1),
-                ("animationSpeed", "Number", 1),
-                ("xoffset", "Number", 0),
-                ("yoffset", "Number", 0),
-                ("castable", "Boolean", false),
-                ("tile", "String", "noone"),
-                ("placeable", "Boolean", false),
-                ("type", "String", "material"),
-                ("typeName", "String", ""),
-                ("damageType", "String", "melee"),
-                ("damageTypeName", "String", ""),
-                ("damageBoost", "Number", 0),
-                ("healthBoost", "Number", 0),
-                ("damageModifier", "Number", 0),
-                ("healthModifier", "Number", 0),
-                ("speedModifier", "Number", 0),
-                ("reach", "Number", 6),
-                ("toolPower", "Number", 0),
-                ("useSpeed", "Number", 60),
-                ("stackable", "Boolean", true),
-                ("tooltip", "String", ""),
-                ("pickaxe", "Boolean", false),
-                ("axe", "Boolean", false),
-                ("bagSlots", "Number", 0),
-                ("sprite", "String", "noSprite"),
-                ("useSprite", "String", "noSprite"),
-                ("cooldown", "Number", 0),
-                ("maxCooldown", "Number", 0),
-                ("healthbarScale", "Number", 1),
-                ("heldAngleOffset", "Number", 0),
-                ("attackBuffs", "String", "noone"),
-                ("consumeBuffs", "String", "noone"),
-                ("bad", "Boolean", false),
-                ("heal", "Number", 0),
-                ("regen", "Number", 0),
-                ("regenLength", "Number", 0),
-                ("alive", "Boolean", false),
-                ("consumeOnUse", "Boolean", false),
-                ("potionType", "String", "none"),
-                ("potionStrength", "Number", 0),
-                ("smeltable", "Boolean", false),
-                ("smeltResult", "String", ""),
-                ("smeltAmount", "Number", 0),
-                ("behavior", "String", "noone")
+                new("name", "String", ""),
+                new("damage", "Number", 0),
+                new("rarity", "String", "normal", EnumUtil.ToStringArray<Item.Rarity>()),
+                new("color", "String", "white", EnumUtil.ToStringArray<Item.Color>()),
+                new("durability", "Number", 0),
+                new("maxDurability", "Number", 0),
+                new("consumable", "Boolean", false),
+                new("faceMouse", "Boolean", false),
+                new("projectile", "String", ""),
+                new("useSound", "String", "snd_swing"),
+                new("shootSound", "String", ""),
+                new("frames", "Number", 1),
+                new("animationSpeed", "Number", 1),
+                new("xoffset", "Number", 0),
+                new("yoffset", "Number", 0),
+                new("castable", "Boolean", false),
+                new("tile", "String", "noone"),
+                new("placeable", "Boolean", false),
+                new("type", "String", "Material", EnumUtil.ToStringArray<Item.Type>()),
+                new("typeName", "String", ""),
+                new("damageType", "String", "Melee", EnumUtil.ToStringArray<Item.DamageType>()),
+                new("damageTypeName", "String", ""),
+                new("damageBoost", "Number", 0),
+                new("healthBoost", "Number", 0),
+                new("damageModifier", "Number", 0),
+                new("healthModifier", "Number", 0),
+                new("speedModifier", "Number", 0),
+                new("reach", "Number", 6),
+                new("toolPower", "Number", 0),
+                new("useSpeed", "Number", 60),
+                new("stackable", "Boolean", true),
+                new("tooltip", "String", ""),
+                new("pickaxe", "Boolean", false),
+                new("axe", "Boolean", false),
+                new("bagSlots", "Number", 0),
+                new("sprite", "String", "noSprite"),
+                new("useSprite", "String", "noSprite"),
+                new("cooldown", "Number", 0),
+                new("maxCooldown", "Number", 0),
+                new("healthbarScale", "Number", 1),
+                new("heldAngleOffset", "Number", 0),
+                new("attackBuffs", "String", "noone"),
+                new("consumeBuffs", "String", "noone"),
+                new("bad", "Boolean", false),
+                new("heal", "Number", 0),
+                new("regen", "Number", 0),
+                new("regenLength", "Number", 0),
+                new("alive", "Boolean", false),
+                new("consumeOnUse", "Boolean", false),
+                new("smeltable", "Boolean", false),
+                new("smeltResult", "String", ""),
+                new("smeltAmount", "Number", 0),
+                new("behavior", "String", "noone")
             }
         },
-
         {
             "Lifeform",
-            new List<(string, string, object)>
+            new List<JsonField>
             {
-                ("id", "String", ""),
-                ("species", "String", ""),
-                ("hostile", "Boolean", false),
-                ("hp", "Number", 100),
-                ("speed", "Number", 10)
+                new("id", "String", ""),
+                new("species", "String", ""),
+                new("hostile", "Boolean", false),
+                new("hp", "Number", 100),
+                new("speed", "Number", 10)
             }
         },
         {
             "Races",
-            new List<(string, string, object)>
+            new List<JsonField>
             {
-                ("name", "String", ""),
-                ("description", "String", ""),
-                ("attributes", "Object", new JObject())
+                new("name", "String", ""),
+                new("description", "String", ""),
+                new("attributes", "Object", new JObject())
             }
         },
         {
             "Empty",
-            new List<(string, string, object)>
+            new List<JsonField>
             {
-                ("Base", "Object", ""),
+                new("Base", "Object", new JObject())
             }
         }
+    };
+
+    /// <summary>
+    /// Schemas used to generalize categories of items
+    /// </summary>
+    public static readonly List<string> Schemas = new List<string>
+    {
+        "Item",
+        "Lifeform",
+        "Race"
     };
 }
 
