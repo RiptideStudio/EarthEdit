@@ -202,10 +202,6 @@ namespace JsonEditorApp
             TabControl tabControl = sender as TabControl;
         }
 
-        private TabPage OpenNewTab()
-        {
-            return CreateNewEditorTab("Untitled", null, null);
-        }
         private void NewTab(object sender, EventArgs e)
         {
             CreateNewEditorTab("Untitled", new JObject());
@@ -544,6 +540,7 @@ namespace JsonEditorApp
         }
         private void UpdateTreeView()
         {
+            MarkTabAsDirty();
             if (fileTabControl.SelectedTab == null) return;
 
             // Find the TreeView inside the selected tab's controls
@@ -774,10 +771,9 @@ namespace JsonEditorApp
                 node.Text = !string.IsNullOrEmpty(valueText) ? $"{newName}: {valueText}" : newName;
                 node.Tag = selectedPropertyPath;
 
-                // ✅ Update children to reflect new path
                 UpdateChildTags(node, oldPath, selectedPropertyPath);
+                MarkTabAsDirty();
             }
-
             UpdateRawJsonDisplay();
         }
 
@@ -1120,8 +1116,6 @@ namespace JsonEditorApp
 
                 // Update the JSON data
                 UpdateJsonProperty(path, newName, newValue);
-
-                // Update UI
                 UpdateTreeView();
                 UpdateRawJsonDisplay();
             }
@@ -1187,6 +1181,8 @@ namespace JsonEditorApp
 
         private void UpdateJsonProperty(string path, string newName, JToken newValue)
         {
+            MarkTabAsDirty();
+
             // For array items, we just update the value
             if (path.EndsWith("]"))
             {
@@ -1523,6 +1519,32 @@ namespace JsonEditorApp
             }
         }
 
+        private JObject BuildJsonFromPreset(string presetName)
+        {
+            JObject result = new JObject();
+
+            if (JsonSchemas.Presets.TryGetValue(presetName, out var fields))
+            {
+                foreach (var field in fields)
+                {
+                    JToken value = field.type switch
+                    {
+                        "String" => new JValue(field.defaultValue?.ToString() ?? ""),
+                        "Number" => new JValue(Convert.ToDouble(field.defaultValue ?? 0)),
+                        "Boolean" => new JValue(Convert.ToBoolean(field.defaultValue ?? false)),
+                        "Object" => field.defaultValue is JObject jo ? jo.DeepClone() : new JObject(),
+                        "Array" => field.defaultValue is JArray ja ? ja.DeepClone() : new JArray(),
+                        "Null" => JValue.CreateNull(),
+                        _ => new JValue(field.defaultValue?.ToString() ?? "")
+                    };
+
+                    result[field.name] = value;
+                }
+            }
+
+            return result;
+        }
+
         private void NewFile(object sender, EventArgs e)
         {
             // 🚀 Ask the user for a file name
@@ -1530,7 +1552,7 @@ namespace JsonEditorApp
             if (string.IsNullOrWhiteSpace(fileName)) return; // If canceled, do nothing
 
             // 🚀 Create an empty JSON object
-            JObject newJson = new JObject();
+            JObject newJson = BuildJsonFromPreset("Empty");
 
             // 🚀 Get the file path (Default to Documents folder)
             string filePath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments), fileName + ".json");
@@ -1594,8 +1616,7 @@ namespace JsonEditorApp
                 JObject jsonData = JObject.Parse(fileContent);
 
                 // Get current tab
-                TabControl tabControl = this.Controls.Find("fileTabControl", true)[0] as TabControl;
-                TabPage selectedTab = tabControl.SelectedTab;
+                TabPage selectedTab = fileTabControl.SelectedTab;
 
                 if (selectedTab == null || selectedTab.Text == "+")
                     return; // Don't allow opening into the + tab
@@ -1630,6 +1651,7 @@ namespace JsonEditorApp
                 UpdateRecentFilesMenu();
                 UpdateTreeView();
                 UpdateRawJsonDisplay();
+                MarkTabAsSaved();
             }
             catch (Exception ex)
             {
@@ -1674,6 +1696,30 @@ namespace JsonEditorApp
             }
         }
 
+        private void MarkTabAsDirty()
+        {
+            var tab = fileTabControl.SelectedTab;
+            if (tab != null && !tab.Text.EndsWith("*"))
+            {
+                tab.Text += " *";
+            }
+        }
+        private void MarkTabAsSaved()
+        {
+            var tab = fileTabControl.SelectedTab;
+
+            if (tab != null)
+            {
+                string fileName = Path.GetFileName(currentFilePath);
+
+                if (!string.IsNullOrEmpty(fileName))
+                {
+                    tab.Text = fileName;
+                }
+            }
+        }
+
+
         private void SaveFile(object sender, EventArgs e)
         {
             if (string.IsNullOrEmpty(currentFilePath))
@@ -1685,6 +1731,7 @@ namespace JsonEditorApp
                 try
                 {
                     File.WriteAllText(currentFilePath, JsonConvert.SerializeObject(jsonData, Formatting.Indented));
+                    MarkTabAsSaved();
                 }
                 catch (Exception ex)
                 {
@@ -1707,6 +1754,7 @@ namespace JsonEditorApp
                     File.WriteAllText(saveFileDialog.FileName, JsonConvert.SerializeObject(jsonData, Formatting.Indented));
                     currentFilePath = saveFileDialog.FileName;
                     MessageBox.Show("File saved successfully.", "Save Successful", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                    MarkTabAsSaved();
                 }
                 catch (Exception ex)
                 {

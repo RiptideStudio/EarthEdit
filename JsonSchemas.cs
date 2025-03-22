@@ -17,9 +17,9 @@ static class JsonSchemas
                 ("maxDurability", "Number", 0),
                 ("consumable", "Boolean", false),
                 ("faceMouse", "Boolean", false),
-                ("projectile", "String", "noone"),
+                ("projectile", "String", ""),
                 ("useSound", "String", "snd_swing"),
-                ("shootSound", "String", "noone"),
+                ("shootSound", "String", ""),
                 ("frames", "Number", 1),
                 ("animationSpeed", "Number", 1),
                 ("xoffset", "Number", 0),
@@ -85,6 +85,13 @@ static class JsonSchemas
                 ("name", "String", ""),
                 ("description", "String", ""),
                 ("attributes", "Object", new JObject())
+            }
+        },
+        {
+            "Empty",
+            new List<(string, string, object)>
+            {
+                ("Base", "Object", ""),
             }
         }
     };
