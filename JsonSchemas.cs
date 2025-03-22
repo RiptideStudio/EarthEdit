@@ -14,6 +14,97 @@ static class JsonSchemas
                 ("rarity", "String", "normal"),
                 ("color", "String", "white"),
                 ("durability", "Number", 0),
+                ("consumable", "Boolean", false),
+                ("projectile", "String", ""),
+                ("type", "String", "Material"),
+                ("damageType", "String", "Melee"),
+                ("damageBoost", "Number", 0),
+                ("healthBoost", "Number", 0),
+            }
+        },
+        {
+            "Enemy",
+            new List<(string name, string type, object defaultValue)>
+            {
+                ("name", "String", ""),
+                ("friendly", "Boolean", false),
+                ("frames", "Number", 0),
+                ("hp", "Number", 0),
+                ("damage", "Number", 0),
+                ("npc", "Boolean", false),
+                ("swarm", "Boolean", false),
+                ("spd", "Number", 1),
+                ("chaseSpd", "Number", 1),
+                ("acc", "Number", 0.3),
+                ("attackSight", "Number", 0),
+                ("idleAnimation", "Array", new JArray(0, 5, 20, true)),
+                ("attackAnimation", "Array", new JArray(0, 5, 20, true)),
+                ("shootAnimation", "Array", new JArray(5, 11, 20, false)),
+                ("hurtAnimation", "Array", new JArray(0, 5, 24, true)),
+                ("aiType", "String", "AngryHornet"),
+                ("experience", "Array", new JArray(0, 0)),
+                ("lootTable", "String", "")
+            }
+        },
+        {
+            "NPC",
+            new List<(string name, string type, object defaultValue)>
+            {
+                ("name", "String", ""),
+                ("heldItem", "String", ""),
+                ("skin", "String", ""),
+                ("friendly", "Boolean", true),
+                ("npc", "Boolean", true),
+                ("smart", "Boolean", false),
+                ("isShop", "Boolean", false),
+                ("hp", "Number", 100),
+                ("damage", "Number", 3),
+                ("spd", "Number", 1),
+                ("chaseSpd", "Number", 2),
+                ("acc", "Number", 0.3),
+                ("attackCooldown", "Number", 60),
+                ("experience", "Array", new JArray(0, 0)),
+            }
+        },
+        {
+            "Races",
+            new List<(string, string, object)>
+            {
+                ("name", "String", ""),
+                ("description", "String", ""),
+                ("background", "String", ""),
+                ("skin", "String", ""),
+                ("difficulty", "String", ""),
+                ("unlocked", "Boolean", false),
+                ("hp", "Number", 10),
+                ("startingItems", "Array", new JArray
+                {
+                    new JArray { "WoodenAxe", 1 },
+                }),
+            }
+
+        },
+        {
+            "Empty",
+            new List<(string, string, object)>
+            {
+                ("Base", "Object", ""),
+            }
+        }
+    };
+
+    public static readonly Dictionary<string, List<(string name, string type, object defaultValue)>> Properties
+        = new Dictionary<string, List<(string, string, object)>>()
+    {
+        {
+            "Item",
+            new List<(string name, string type, object defaultValue)>
+            {
+                ("name", "String", ""),
+                ("damage", "Number", 0),
+                ("rarity", "String", "normal"),
+                ("color", "String", "white"),
+                ("durability", "Number", 0),
                 ("maxDurability", "Number", 0),
                 ("consumable", "Boolean", false),
                 ("faceMouse", "Boolean", false),

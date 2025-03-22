@@ -36,6 +36,7 @@ namespace JsonEditorApp
 
         public MainForm()
         {
+            this.Icon = new Icon("Icon.ico");
             InitializeComponent();
 
             var recent = RecentFiles.Load();
@@ -68,20 +69,29 @@ namespace JsonEditorApp
             this.MainMenuStrip = menuStrip;
 
             ToolStripMenuItem fileMenu = new ToolStripMenuItem("File");
-            ToolStripMenuItem newMenuItem = new ToolStripMenuItem("New Json", null, new EventHandler(NewFile));
+            ToolStripMenuItem newMenuItem = new ToolStripMenuItem("New Item");
             ToolStripMenuItem newTab = new ToolStripMenuItem("New Tab", null, new EventHandler(NewTab));
-            ToolStripMenuItem openMenuItem = new ToolStripMenuItem("Open", null, new EventHandler(OpenFile));
+            ToolStripMenuItem openMenuItem = new ToolStripMenuItem("Open Item", null, new EventHandler(OpenFile));
             ToolStripMenuItem saveMenuItem = new ToolStripMenuItem("Save", null, new EventHandler(SaveFile));
             ToolStripMenuItem saveAsMenuItem = new ToolStripMenuItem("Save As", null, new EventHandler(SaveFileAs));
+            ToolStripMenuItem openInNewTabMenuItem = new ToolStripMenuItem("Open in New Tab", null, new EventHandler(OpenFileInNewTabMenu));
             recentFilesMenuItem = new ToolStripMenuItem("Recent");
+
+            foreach (var schema in JsonSchemas.Presets.Keys)
+            {
+                var schemaItem = new ToolStripMenuItem(schema);
+                schemaItem.Click += (s, e) => CreateNewFileFromSchema(schema);
+                newMenuItem.DropDownItems.Add(schemaItem);
+            }
 
             fileMenu.DropDownItems.AddRange(new ToolStripItem[]
             {
+                newMenuItem,
                 openMenuItem,
+                openInNewTabMenuItem,
+                recentFilesMenuItem,
                 saveMenuItem,
                 saveAsMenuItem,
-                recentFilesMenuItem,
-                newMenuItem,
                 newTab,
                 new ToolStripSeparator(),
             });
@@ -151,6 +161,92 @@ namespace JsonEditorApp
             menuStrip.BackColor = Color.FromArgb(45, 45, 48);
             menuStrip.ForeColor = Color.Black;
         }
+        private void CopySelectedNode()
+        {
+            TreeView treeView = fileTabControl.SelectedTab.Controls.Find("propertiesTreeView", true).FirstOrDefault() as TreeView;
+            if (treeView?.SelectedNode?.Tag is string path)
+            {
+                JToken token = GetTokenAtPath(path);
+                if (token != null)
+                {
+                    Clipboard.SetText(token.ToString(Formatting.None)); // Copy raw JSON
+                }
+            }
+        }
+
+        private void PasteIntoSelectedNode()
+        {
+            TreeView treeView = fileTabControl.SelectedTab.Controls.Find("propertiesTreeView", true).FirstOrDefault() as TreeView;
+            if (treeView?.SelectedNode?.Tag is string path && Clipboard.ContainsText())
+            {
+                string json = Clipboard.GetText();
+
+                try
+                {
+                    JToken newToken = JToken.Parse(json);
+                    JToken target = GetTokenAtPath(path);
+
+                    if (target is JObject obj && newToken is JProperty prop)
+                    {
+                        if (!obj.ContainsKey(prop.Name))
+                        {
+                            obj.Add(prop);
+                        }
+                    }
+                    else if (target is JArray arr)
+                    {
+                        arr.Add(newToken);
+                    }
+                    else if (target?.Parent is JArray parentArr)
+                    {
+                        parentArr.Add(newToken);
+                    }
+
+                    UpdateTreeView();
+                    UpdateRawJsonDisplay();
+                }
+                catch (Exception ex)
+                {
+                    MessageBox.Show("Invalid JSON in clipboard: " + ex.Message);
+                }
+            }
+        }
+
+        private void CreateNewFileFromSchema(string schemaName)
+        {
+            string fileName = PromptForFileName();
+            if (string.IsNullOrWhiteSpace(fileName)) return;
+
+            JObject newJson = BuildJsonFromPreset(schemaName);
+
+            string filePath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments), fileName + ".json");
+
+            try
+            {
+                File.WriteAllText(filePath, JsonConvert.SerializeObject(newJson, Formatting.Indented));
+                CreateNewEditorTab(fileName, newJson, filePath);
+                OpenFile(filePath);
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Error creating file: {ex.Message}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+        }
+
+        private void OpenFileInNewTabMenu(object sender, EventArgs e)
+        {
+            using (OpenFileDialog openFileDialog = new OpenFileDialog())
+            {
+                openFileDialog.Filter = "JSON files (*.json)|*.json|All files (*.*)|*.*";
+                openFileDialog.Title = "Open JSON in New Tab";
+
+                if (openFileDialog.ShowDialog() == DialogResult.OK)
+                {
+                    OpenFileInNewTab(openFileDialog.FileName);
+                }
+            }
+        }
+
         private void CloseTab_Click(object sender, EventArgs e)
         {
             if (fileTabControl.SelectedTab != null)
@@ -199,7 +295,16 @@ namespace JsonEditorApp
 
         private void FileTabControl_Selecting(object sender, TabControlCancelEventArgs e)
         {
-            TabControl tabControl = sender as TabControl;
+            if (fileTabControl.SelectedTab?.Tag is EditorContext ctx)
+            {
+                jsonData = ctx.Json;
+                currentFilePath = ctx.FilePath;
+                selectedProperty = null;
+                selectedPropertyPath = null;
+
+                UpdateTreeView();
+                UpdateRawJsonDisplay();
+            }
         }
 
         private void NewTab(object sender, EventArgs e)
@@ -772,8 +877,9 @@ namespace JsonEditorApp
                 node.Tag = selectedPropertyPath;
 
                 UpdateChildTags(node, oldPath, selectedPropertyPath);
-                MarkTabAsDirty();
             }
+
+            MarkTabAsDirty();
             UpdateRawJsonDisplay();
         }
 
@@ -960,7 +1066,7 @@ namespace JsonEditorApp
                 node.Text = !string.IsNullOrEmpty(valueText) ? $"{propertyName}: {valueText}" : propertyName;
 
             }
-
+            MarkTabAsDirty();
             UpdateRawJsonDisplay();
         }
 
@@ -1264,7 +1370,7 @@ namespace JsonEditorApp
             if (enforcePresetCheckbox?.Checked == false && presetSelector?.SelectedItem != null)
             {
                 string selectedPreset = presetSelector.SelectedItem.ToString();
-                if (JsonSchemas.Presets.TryGetValue(selectedPreset, out var fields))
+                if (JsonSchemas.Properties.TryGetValue(selectedPreset, out var fields))
                 {
                     var available = fields.Select(f => f.name).Where(name => !parentObj.ContainsKey(name)).ToList();
                     if (available.Count == 0)
@@ -1799,6 +1905,16 @@ namespace JsonEditorApp
                 }
 
                 return true; // Mark Delete as handled
+            }
+            else if (keyData == (Keys.Control | Keys.C))
+            {
+                CopySelectedNode();
+                return true;
+            }
+            else if (keyData == (Keys.Control | Keys.V))
+            {
+                PasteIntoSelectedNode();
+                return true;
             }
 
             return base.ProcessCmdKey(ref msg, keyData);
