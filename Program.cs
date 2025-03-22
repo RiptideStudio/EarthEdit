@@ -590,7 +590,6 @@ namespace JsonEditorApp
             }
             return null;
         }
-
         private void PropertiesTreeView_DragDrop(object sender, DragEventArgs e)
         {
             TreeView tree = sender as TreeView;
@@ -598,17 +597,71 @@ namespace JsonEditorApp
             Point pt = tree.PointToClient(new Point(e.X, e.Y));
             TreeNode targetNode = tree.GetNodeAt(pt);
 
-            if (draggedNode != null && targetNode != null && draggedNode != targetNode)
+            if (draggedNode == null || targetNode == null || draggedNode == targetNode)
+                return;
+
+            // Prevent dragging into its own child
+            TreeNode current = targetNode;
+            while (current != null)
             {
-                draggedNode.Remove();
-                targetNode.Nodes.Add(draggedNode);
-                targetNode.Expand();
-
-                // TODO: Update jsonData to reflect new hierarchy
-                // You’ll need to reassign the property or array element in the underlying JSON
+                if (current == draggedNode)
+                    return;
+                current = current.Parent;
             }
-        }
 
+            // Get paths from tags
+            string draggedPath = draggedNode.Tag?.ToString();
+            string targetPath = targetNode.Tag?.ToString();
+
+            if (string.IsNullOrEmpty(draggedPath) || string.IsNullOrEmpty(targetPath))
+                return;
+
+            // Get the dragged token and its parent
+            JToken draggedToken = GetTokenAtPath(draggedPath);
+            int lastDot = draggedPath.LastIndexOf('.');
+            string draggedParentPath = lastDot >= 0 ? draggedPath.Substring(0, lastDot) : "";
+            string draggedKey = lastDot >= 0 ? draggedPath.Substring(lastDot + 1) : draggedPath;
+
+            // Remove from previous parent
+            JToken parentToken = string.IsNullOrEmpty(draggedParentPath) ? jsonData : GetTokenAtPath(draggedParentPath);
+            if (parentToken is JObject parentObj)
+            {
+                parentObj.Remove(draggedKey);
+            }
+            else if (parentToken is JArray parentArray && int.TryParse(draggedKey.Trim('[', ']'), out int index))
+            {
+                if (index >= 0 && index < parentArray.Count)
+                    parentArray.RemoveAt(index);
+            }
+
+            // Now add draggedToken to the new location
+            JToken targetToken = GetTokenAtPath(targetPath);
+
+            if (targetToken is JObject targetObj && draggedToken is JProperty prop)
+            {
+                // If dragged is a JProperty (normal property), move it into the new object
+                targetObj.Add(prop);
+            }
+            else if (targetToken is JObject targetObj2 && draggedToken.Parent is JProperty dp)
+            {
+                // If the dragged token is the value of a JProperty, preserve the key
+                JProperty newProp = new JProperty(dp.Name, draggedToken);
+                targetObj2.Add(newProp);
+            }
+            else if (targetToken is JArray targetArray)
+            {
+                // If dropping into an array
+                targetArray.Add(draggedToken);
+            }
+
+            // Update visual tree
+            draggedNode.Remove();
+            targetNode.Nodes.Add(draggedNode);
+            targetNode.Expand();
+
+            UpdateRawJsonDisplay();
+            UpdateTreeView();
+        }
         private void PopulateTreeView(TreeNodeCollection nodes, JToken token, string path = "")
         {
             if (token is JObject obj)
@@ -712,32 +765,25 @@ namespace JsonEditorApp
 
         private void PropertiesTreeView_AfterSelect(object sender, TreeViewEventArgs e)
         {
-            // Ensure there's a selected tab
-            if (fileTabControl.SelectedTab == null) return;
+            if (e.Node == null) return;
 
-            // Get the TreeView from the active tab
-            TreeView treeView = fileTabControl.SelectedTab.Controls.Find("propertiesTreeView", true).FirstOrDefault() as TreeView;
-            if (treeView == null) return; // No TreeView found in the selected tab
-
-            // Get the selected node's path
-            string path = e.Node.Tag.ToString();
+            // ✅ Ensure full path is used
+            string path = e.Node.Tag?.ToString();
             JToken token = GetTokenAtPath(path);
             selectedPropertyPath = path;
 
-            if (token != null && token.Parent is JProperty prop)
+            if (token != null)
             {
-                selectedProperty = prop;
+                selectedProperty = token.Parent is JProperty prop ? prop : null;
 
-                // 🔹 Find the controls INSIDE the selected tab
+                // ✅ Find controls inside the correct tab
                 Control[] foundControls = fileTabControl.SelectedTab.Controls.Find("propertyNameTextBox", true);
                 if (foundControls.Length == 0) return;
                 TextBox nameTextBox = foundControls[0] as TextBox;
 
-                // Find and remove old controls
-                Control[] oldValueControls = fileTabControl.SelectedTab.Controls.Find("propertyValueTextBox", true)
-                    .Concat(fileTabControl.SelectedTab.Controls.Find("propertyValueCheckBox", true))
-                    .ToArray();
-                Control oldValueControl = oldValueControls.FirstOrDefault();
+                foundControls = fileTabControl.SelectedTab.Controls.Find("propertyValueTextBox", true);
+                Control oldValueControl = foundControls.FirstOrDefault()
+                                          ?? fileTabControl.SelectedTab.Controls.Find("propertyValueCheckBox", true).FirstOrDefault();
 
                 foundControls = fileTabControl.SelectedTab.Controls.Find("propertyTypeComboBox", true);
                 if (foundControls.Length == 0) return;
@@ -745,92 +791,87 @@ namespace JsonEditorApp
 
                 Panel editorPanel = nameTextBox.Parent as Panel;
 
-                // Remove old control from the panel
-                if (oldValueControl != null)
-                {
-                    // Unsubscribe old event handlers
-                    if (oldValueControl is TextBox textBox)
-                        textBox.TextChanged -= null;
-                    if (oldValueControl is CheckBox checkBox)
-                        checkBox.CheckedChanged -= null;
-                    if (oldValueControl is NumericUpDown numericUpDown)
-                        numericUpDown.ValueChanged -= null;
-
-                    editorPanel.Controls.Remove(oldValueControl);
-                    oldValueControl.Dispose();
-                }
-
-                // Get property name
-                string[] pathParts = path.Split('.');
-                string propertyName = pathParts[^1];
-
-                // Handle name input
+                // ✅ Handle array elements correctly
+                string propertyName = e.Node.Text.Contains(":") ? e.Node.Text.Split(':')[0].Trim() : e.Node.Text;
                 nameTextBox.Text = propertyName;
-                nameTextBox.ReadOnly = propertyName.StartsWith("[") && propertyName.EndsWith("]");
+                nameTextBox.ReadOnly = path.Contains("[") && path.Contains("]"); // Disable editing for array indices
 
                 nameTextBox.TextChanged -= NameTextBox_TextChanged;
                 nameTextBox.TextChanged += NameTextBox_TextChanged;
 
-                string selectedType = token.Type switch
+                // Remove old value field if it exists
+                if (oldValueControl != null)
                 {
-                    JTokenType.String => "String",
-                    JTokenType.Integer or JTokenType.Float => "Number",
-                    JTokenType.Boolean => "Boolean",
-                    JTokenType.Null => "Null",
-                    JTokenType.Object => "Object",
-                    JTokenType.Array => "Array",
-                    _ => "Unknown"
-                };
-
-                typeComboBox.SelectedItem = selectedType;
+                    editorPanel.Controls.Remove(oldValueControl);
+                }
 
                 Control newControl = null; // Holds the new control
 
-                if (selectedType == "Boolean")
+                if (token is JValue jValue)
                 {
-                    CheckBox boolCheckBox = new CheckBox
+                    string selectedType = jValue.Type switch
                     {
-                        Name = "propertyValueCheckBox",
-                        Checked = selectedProperty.Value.Value<bool>(),
-                        Location = new Point(110, 72),
-                        AutoSize = true
+                        JTokenType.String => "String",
+                        JTokenType.Integer or JTokenType.Float => "Number",
+                        JTokenType.Boolean => "Boolean",
+                        JTokenType.Null => "Null",
+                        _ => "Unknown"
                     };
 
-                    valueTextBox.TextChanged += (s, ev) => UpdatePropertyFromControl(valueTextBox.Text);
-                    newControl = boolCheckBox;
-                }
-                else if (selectedType == "Number")
-                {
-                    NumericUpDown numberBox = new NumericUpDown
-                    {
-                        Name = "propertyValueCheckBox",
-                        Location = new Point(110, 70),
-                        Size = new Size(200, 20),
-                        DecimalPlaces = token.Type == JTokenType.Float ? 2 : 0,
-                        Minimum = decimal.MinValue,
-                        Maximum = decimal.MaxValue,
-                        Value = selectedProperty.Value.Value<decimal>()
-                    };
+                    typeComboBox.SelectedItem = selectedType;
 
-                    valueTextBox.TextChanged += (s, ev) => UpdatePropertyFromControl( valueTextBox.Text);
-                    newControl = numberBox;
-                }
-                else
-                {
-                    TextBox valueTextBox = new TextBox
+                    if (selectedType == "Boolean")
                     {
-                        Name = "propertyValueTextBox",
-                        Location = new Point(110, 70),
-                        Size = new Size(300, 20),
-                        Text = selectedProperty.Value?.ToString() ?? "",
-                        Height = 100,
-                        Multiline = true
-                    };
-                    valueTextBox.TextChanged += (s, ev) => UpdatePropertyFromControl( valueTextBox.Text);
-                    newControl = valueTextBox;
+                        // ✅ Use a CheckBox for booleans
+                        CheckBox boolCheckBox = new CheckBox
+                        {
+                            Name = "propertyValueCheckBox",
+                            Checked = jValue.Value<bool>(),
+                            Location = new Point(110, 72),
+                            AutoSize = true
+                        };
+                        boolCheckBox.CheckedChanged += (s, ev) => UpdatePropertyFromControl(boolCheckBox.Checked);
+                        newControl = boolCheckBox;
+                    }
+                    else if (selectedType == "Number")
+                    {
+                        // ✅ Use NumericUpDown for numbers
+                        NumericUpDown numberBox = new NumericUpDown
+                        {
+                            Name = "propertyValueCheckBox",
+                            Location = new Point(110, 70),
+                            Size = new Size(300, 20),
+                            DecimalPlaces = token.Type == JTokenType.Float ? 2 : 0,
+                            Minimum = decimal.MinValue,
+                            Maximum = decimal.MaxValue,
+                            Value = Convert.ToDecimal(jValue.Value)
+                        };
+
+                        numberBox.ValueChanged += (s, ev) =>
+                        {
+                            UpdatePropertyFromControl( numberBox.Value);
+                        };
+
+                        newControl = numberBox;
+                    }
+                    else
+                    {
+                        // ✅ Use a TextBox for strings & everything else
+                        TextBox valueTextBox = new TextBox
+                        {
+                            Name = "propertyValueTextBox",
+                            Location = new Point(110, 70),
+                            Size = new Size(300, 20),
+                            Text = jValue.Value?.ToString() ?? "",
+                            Height = 100,
+                            Multiline = true
+                        };
+                        valueTextBox.TextChanged += (s, ev) => UpdatePropertyFromControl(valueTextBox.Text);
+                        newControl = valueTextBox;
+                    }
                 }
 
-                // 🚀 Add new control if created
+                // ✅ Add new control if needed
                 if (newControl != null)
                 {
                     editorPanel.Controls.Add(newControl);
@@ -838,6 +879,7 @@ namespace JsonEditorApp
                 }
             }
         }
+
 
         private void ValueTextBox_TextChanged(object sender, EventArgs e)
         {
