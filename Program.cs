@@ -5,6 +5,7 @@ using System.IO;
 using System.Windows.Forms;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
+using static System.Windows.Forms.VisualStyles.VisualStyleElement.Window;
 
 namespace JsonEditorApp
 {
@@ -422,7 +423,7 @@ namespace JsonEditorApp
             animationPanel.AutoScroll = true;
             animationPanel.Name = "animationPanel";
             animationPanel.WrapContents = false;
-            animationPanel.Padding = new Padding(20);
+            animationPanel.Padding = new Padding(0,30,40,0);
             splitContainer.Panel2.Controls.Add(animationPanel);
 
             nameTextBox = new TextBox();
@@ -437,7 +438,6 @@ namespace JsonEditorApp
   
             // Update recent files
             UpdateRecentFilesMenu();
-
 
             return splitContainer;
         }
@@ -597,71 +597,87 @@ namespace JsonEditorApp
             Point pt = tree.PointToClient(new Point(e.X, e.Y));
             TreeNode targetNode = tree.GetNodeAt(pt);
 
-            if (draggedNode == null || targetNode == null || draggedNode == targetNode)
-                return;
+            if (draggedNode == null) return;
 
-            // Prevent dragging into its own child
-            TreeNode current = targetNode;
-            while (current != null)
-            {
-                if (current == draggedNode)
-                    return;
-                current = current.Parent;
-            }
-
-            // Get paths from tags
             string draggedPath = draggedNode.Tag?.ToString();
-            string targetPath = targetNode.Tag?.ToString();
+            string targetPath = targetNode?.Tag?.ToString();
+            if (string.IsNullOrEmpty(draggedPath)) return;
 
-            if (string.IsNullOrEmpty(draggedPath) || string.IsNullOrEmpty(targetPath))
-                return;
-
-            // Get the dragged token and its parent
             JToken draggedToken = GetTokenAtPath(draggedPath);
-            int lastDot = draggedPath.LastIndexOf('.');
-            string draggedParentPath = lastDot >= 0 ? draggedPath.Substring(0, lastDot) : "";
-            string draggedKey = lastDot >= 0 ? draggedPath.Substring(lastDot + 1) : draggedPath;
+            if (draggedToken == null || draggedToken.Parent is JArray || draggedToken.Parent is JObject) return;
 
-            // Remove from previous parent
-            JToken parentToken = string.IsNullOrEmpty(draggedParentPath) ? jsonData : GetTokenAtPath(draggedParentPath);
-            if (parentToken is JObject parentObj)
-            {
-                parentObj.Remove(draggedKey);
-            }
-            else if (parentToken is JArray parentArray && int.TryParse(draggedKey.Trim('[', ']'), out int index))
-            {
-                if (index >= 0 && index < parentArray.Count)
-                    parentArray.RemoveAt(index);
-            }
+            JToken targetToken = targetPath != null ? GetTokenAtPath(targetPath) : null;
 
-            // Now add draggedToken to the new location
-            JToken targetToken = GetTokenAtPath(targetPath);
+            // Remove from current parent first
+            if (draggedToken.Parent is JProperty prop)
+                prop.Remove();
+            else if (draggedToken.Parent is JArray arr)
+                arr.Remove(draggedToken);
 
-            if (targetToken is JObject targetObj && draggedToken is JProperty prop)
+            bool added = false;
+
+            // ✅ Drop onto object
+            if (targetToken is JObject targetObj && draggedToken is JProperty draggedProp)
             {
-                // If dragged is a JProperty (normal property), move it into the new object
-                targetObj.Add(prop);
+                targetObj.Add(draggedProp);
+                added = true;
             }
             else if (targetToken is JObject targetObj2 && draggedToken.Parent is JProperty dp)
             {
-                // If the dragged token is the value of a JProperty, preserve the key
-                JProperty newProp = new JProperty(dp.Name, draggedToken);
-                targetObj2.Add(newProp);
+                targetObj2.Add(new JProperty(dp.Name, draggedToken));
+                added = true;
             }
+            // ✅ Drop onto array
             else if (targetToken is JArray targetArray)
             {
-                // If dropping into an array
                 targetArray.Add(draggedToken);
+                added = true;
+            }
+            else if (!added && jsonData is JObject rootObj && draggedToken.Parent != rootObj)
+            {
+                // Get the name from the dragged token
+                string originalKey = draggedToken is JProperty dp2
+                    ? dp2.Name
+                    : draggedNode.Text.Split(':')[0].Trim(); // fallback for array values
+
+                string key = originalKey;
+                int i = 1;
+                while (rootObj.ContainsKey(key))
+                    key = $"{originalKey}_{i++}";
+
+                var newProp = new JProperty(key, draggedToken is JProperty p ? p.Value : draggedToken);
+
+                // Determine insertion point in root
+                if (targetNode != null && targetNode.Parent == null)
+                {
+                    string targetKey = targetNode.Text.Split(':')[0].Trim();
+                    var props = rootObj.Properties().ToList();
+                    int insertIndex = props.FindIndex(p => p.Name == targetKey);
+
+                    if (insertIndex != -1)
+                    {
+                        props.Insert(insertIndex, newProp);
+                        rootObj.RemoveAll();
+                        foreach (var prop2 in props)
+                            rootObj.Add(prop2);
+                        added = true;
+                    }
+                }
+
+                // If not inserted into order, just add at end
+                if (!added)
+                {
+                    rootObj.Add(newProp);
+                    added = true;
+                }
             }
 
-            // Update visual tree
-            draggedNode.Remove();
-            targetNode.Nodes.Add(draggedNode);
-            targetNode.Expand();
+
 
             UpdateRawJsonDisplay();
             UpdateTreeView();
         }
+
         private void PopulateTreeView(TreeNodeCollection nodes, JToken token, string path = "")
         {
             if (token is JObject obj)
@@ -722,41 +738,49 @@ namespace JsonEditorApp
 
         private void NameTextBox_TextChanged(object sender, EventArgs e)
         {
-            if (selectedProperty == null || selectedProperty.Parent is not JObject parentObject) 
+            if (selectedProperty == null || selectedProperty.Parent is not JObject parentObject)
                 return;
 
             TextBox nameTextBox = sender as TextBox;
             string newName = nameTextBox.Text.Trim();
 
             // Prevent renaming array elements like [0]
-            if (newName.StartsWith("[") && newName.EndsWith("]")) 
+            if (newName.StartsWith("[") && newName.EndsWith("]"))
                 return;
 
             // Prevent duplicate keys
-            if (parentObject.Property(newName) != null && parentObject.Property(newName) != selectedProperty) 
+            if (parentObject.Property(newName) != null && parentObject.Property(newName) != selectedProperty)
                 return;
 
-            // Rename the property in the JSON object
+            // 🔹 Save the old path before renaming
+            string oldPath = selectedPropertyPath;
+
+            // 🔹 Rename in JSON
             JProperty newProperty = new JProperty(newName, selectedProperty.Value);
             parentObject.Remove(selectedProperty.Name);
             parentObject.Add(newProperty);
-            selectedProperty = newProperty; // ✅ Update reference
+            selectedProperty = newProperty;
+
+            // 🔹 Update selectedPropertyPath with new name
+            selectedPropertyPath = BuildNewPath(oldPath, newName);
 
             TreeView treeView = fileTabControl.SelectedTab.Controls.Find("propertiesTreeView", true).FirstOrDefault() as TreeView;
             TreeNode node = treeView?.SelectedNode;
 
             if (node != null)
             {
-                // ✅ Get current value text
                 string valueText = GetDisplayValueForTreeNode(selectedProperty.Value);
 
-                // ✅ Preserve both name and value in display
                 node.Text = !string.IsNullOrEmpty(valueText) ? $"{newName}: {valueText}" : newName;
-                node.Tag = BuildNewPath(selectedPropertyPath, newName);
+                node.Tag = selectedPropertyPath;
+
+                // ✅ Update children to reflect new path
+                UpdateChildTags(node, oldPath, selectedPropertyPath);
             }
 
             UpdateRawJsonDisplay();
         }
+
         private string BuildNewPath(string oldPath, string newName)
         {
             int lastDot = oldPath.LastIndexOf('.');
@@ -767,7 +791,6 @@ namespace JsonEditorApp
         {
             if (e.Node == null) return;
 
-            // ✅ Ensure full path is used
             string path = e.Node.Tag?.ToString();
             JToken token = GetTokenAtPath(path);
             selectedPropertyPath = path;
@@ -807,6 +830,17 @@ namespace JsonEditorApp
 
                 Control newControl = null; // Holds the new control
 
+                typeComboBox.SelectedItem = token.Type switch
+                {
+                    JTokenType.String => "String",
+                    JTokenType.Integer or JTokenType.Float => "Number",
+                    JTokenType.Boolean => "Boolean",
+                    JTokenType.Null => "Null",
+                    JTokenType.Object => "Object",
+                    JTokenType.Array => "Array",
+                    _ => "Unknown"
+                };
+
                 if (token is JValue jValue)
                 {
                     string selectedType = jValue.Type switch
@@ -815,10 +849,10 @@ namespace JsonEditorApp
                         JTokenType.Integer or JTokenType.Float => "Number",
                         JTokenType.Boolean => "Boolean",
                         JTokenType.Null => "Null",
+                        JTokenType.Object => "Object",
+                        JTokenType.Array => "Array",
                         _ => "Unknown"
                     };
-
-                    typeComboBox.SelectedItem = selectedType;
 
                     if (selectedType == "Boolean")
                     {
@@ -880,69 +914,58 @@ namespace JsonEditorApp
             }
         }
 
-
-        private void ValueTextBox_TextChanged(object sender, EventArgs e)
-        {
-            if (selectedProperty == null) return;
-            TextBox textBox = sender as TextBox;
-            selectedProperty.Value = new JValue(textBox.Text);
-            UpdateRawJsonDisplay();
-        }
-
-        private void BoolCheckBox_CheckedChanged(object sender, EventArgs e)
-        {
-            if (selectedProperty == null) return;
-            CheckBox checkBox = sender as CheckBox;
-            selectedProperty.Value = new JValue(checkBox.Checked);
-            UpdateRawJsonDisplay();
-        }
-
-        private void NumberBox_ValueChanged(object sender, EventArgs e)
-        {
-            if (selectedProperty == null) return;
-            NumericUpDown numberBox = sender as NumericUpDown;
-            selectedProperty.Value = new JValue(numberBox.Value);
-            UpdateRawJsonDisplay();
-        }
-
         private void UpdatePropertyFromControl(object newValue)
         {
-            if (selectedProperty == null) return;
+            if (string.IsNullOrEmpty(selectedPropertyPath)) return;
 
-            if (newValue is bool boolValue)
+            JToken token = GetTokenAtPath(selectedPropertyPath);
+            if (token == null) return;
+
+            // Create new JValue from input
+            JValue newJValue = newValue switch
             {
-                selectedProperty.Value = new JValue(boolValue);
+                bool b => new JValue(b),
+                int or float or double or decimal => new JValue(Convert.ToDouble(newValue)),
+                _ => new JValue(newValue?.ToString())
+            };
+
+            if (selectedProperty != null)
+            {
+                selectedProperty.Value = newJValue;
             }
-            else if (newValue is int || newValue is float || newValue is double)
+            else if (token.Parent is JArray arr)
             {
-                selectedProperty.Value = new JValue(Convert.ToDouble(newValue));
-            }
-            else
-            {
-                selectedProperty.Value = new JValue(newValue?.ToString());
+                int index = arr.IndexOf(token);
+                if (index != -1)
+                {
+                    arr[index] = newJValue;
+                }
             }
 
             TreeView treeView = fileTabControl.SelectedTab.Controls.Find("propertiesTreeView", true).FirstOrDefault() as TreeView;
             TreeNode node = treeView?.SelectedNode;
 
-
             if (node != null)
             {
-                string propertyName = selectedProperty.Name;
+                string propertyName;
+                string valueText;
 
-                // ✅ Correctly format the value for display
-                string valueText = GetDisplayValueForTreeNode(selectedProperty.Value);
+                if (selectedProperty != null)
+                {
+                    propertyName = selectedProperty.Name;
+                    valueText = GetDisplayValueForTreeNode(selectedProperty.Value);
+                }
+                else
+                {
+                    propertyName = node.Text.Split(':')[0].Trim(); // e.g. "[2]"
+                    valueText = GetDisplayValueForTreeNode(newJValue);
+                }
 
-                // ✅ Only update text if there's a value
                 node.Text = !string.IsNullOrEmpty(valueText) ? $"{propertyName}: {valueText}" : propertyName;
+
             }
 
             UpdateRawJsonDisplay();
-        }
-
-        private void UpdateJsonDisplay()
-        {
-
         }
 
         private JToken GetTokenAtPath(string path)
@@ -1201,9 +1224,17 @@ namespace JsonEditorApp
 
         private void AddProperty_Click(object sender, EventArgs e)
         {
-            TreeView treeView = this.Controls.Find("propertiesTreeView", true)[0] as TreeView;
-            ComboBox presetSelector = this.Controls.Find("presetSelector", true)[0] as ComboBox;
-            CheckBox enforcePresetCheckbox = this.Controls.Find("enforcePresetCheckbox", true)[0] as CheckBox;
+            if (fileTabControl.SelectedTab == null) return;
+
+            // Find controls inside the selected tab only
+            var tab = fileTabControl.SelectedTab;
+
+            TreeView treeView = tab.Controls.Find("propertiesTreeView", true).FirstOrDefault() as TreeView;
+            ComboBox presetSelector = tab.Controls.Find("presetSelector", true).FirstOrDefault() as ComboBox;
+            CheckBox enforcePresetCheckbox = tab.Controls.Find("enforcePresetCheckbox", true).FirstOrDefault() as CheckBox;
+
+            if (treeView == null || presetSelector == null || enforcePresetCheckbox == null)
+                return;
 
             string parentPath = "";
             if (treeView.SelectedNode != null && treeView.SelectedNode.Tag != null)
@@ -1258,12 +1289,36 @@ namespace JsonEditorApp
             {
                 // Add a generic "NewProperty" with incremental suffix
                 int counter = 1;
-                newPropertyName = "NewProperty";
+                newPropertyName = "Name";
 
                 while (parentObj.ContainsKey(newPropertyName))
-                    newPropertyName = $"NewProperty{counter++}";
+                    newPropertyName = $"Name{counter++}";
 
-                parentObj[newPropertyName] = "";
+                ComboBox typeComboBox = tab.Controls.Find("propertyTypeComboBox", true).FirstOrDefault() as ComboBox;
+                string selectedType = typeComboBox?.SelectedItem?.ToString();
+
+                JToken defaultValue = selectedType switch
+                {
+                    "String" => new JValue(""),
+                    "Number" => new JValue(0),
+                    "Boolean" => new JValue(false),
+                    "Null" => JValue.CreateNull(),
+                    "Object" => new JObject(),
+                    "Array" => new JArray(),
+                    _ => new JValue("")
+                };
+
+                var newProp = new JProperty(newPropertyName, defaultValue);
+                parentObj.Add(newProp);
+                selectedProperty = newProp; // ✅ set selected property
+
+                string fullPath = string.IsNullOrEmpty(parentPath)
+                    ? newPropertyName
+                    : $"{parentPath}.{newPropertyName}";
+
+                SelectNodeByPath(fullPath);
+
+                UpdateRawJsonDisplay();
             }
 
             // Update UI
@@ -1429,6 +1484,23 @@ namespace JsonEditorApp
             }
         }
 
+        private void UpdateChildTags(TreeNode parentNode, string oldPath, string newPath)
+        {
+            foreach (TreeNode child in parentNode.Nodes)
+            {
+                if (child.Tag is string childPath && childPath.StartsWith(oldPath))
+                {
+                    string updatedPath = newPath + childPath.Substring(oldPath.Length);
+                    child.Tag = updatedPath;
+
+                    if (child.Nodes.Count > 0)
+                    {
+                        UpdateChildTags(child, childPath, updatedPath); // recursive update
+                    }
+                }
+            }
+        }
+
         private void UpdateFromRaw_Click(object sender, EventArgs e)
         {
             TextBox rawJsonTextBox = this.Controls.Find("rawJsonTextBox", true)[0] as TextBox;
@@ -1549,6 +1621,7 @@ namespace JsonEditorApp
                 context.Json = jsonData;
                 context.FilePath = filePath;
                 this.jsonData = jsonData;
+                currentFilePath = filePath;
 
                 // Update UI labels
                 RecentFiles.Add(filePath);
@@ -1612,7 +1685,6 @@ namespace JsonEditorApp
                 try
                 {
                     File.WriteAllText(currentFilePath, JsonConvert.SerializeObject(jsonData, Formatting.Indented));
-                    MessageBox.Show("File saved successfully.", "Save Successful", MessageBoxButtons.OK, MessageBoxIcon.Information);
                 }
                 catch (Exception ex)
                 {
@@ -1649,6 +1721,36 @@ namespace JsonEditorApp
             {
                 SaveFile(null, null); // Call your existing Save function
                 return true; // Mark as handled
+            }
+            else if (keyData == Keys.Delete)
+            {
+                // Find the active TreeView in the selected tab
+                TreeView treeView = fileTabControl.SelectedTab?.Controls.Find("propertiesTreeView", true).FirstOrDefault() as TreeView;
+
+                if (treeView?.SelectedNode != null)
+                {
+                    string path = treeView.SelectedNode.Tag?.ToString();
+                    JToken token = GetTokenAtPath(path);
+
+                    if (token != null)
+                    {
+                        if (token.Parent is JProperty prop)
+                        {
+                            prop.Remove();
+                        }
+                        else if (token.Parent is JArray array)
+                        {
+                            int index = array.IndexOf(token);
+                            if (index >= 0)
+                                array.RemoveAt(index);
+                        }
+
+                        UpdateRawJsonDisplay();
+                        UpdateTreeView();
+                    }
+                }
+
+                return true; // Mark Delete as handled
             }
 
             return base.ProcessCmdKey(ref msg, keyData);
