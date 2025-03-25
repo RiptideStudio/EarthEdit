@@ -1,7 +1,9 @@
 ﻿using Newtonsoft.Json;
 static class RecentFiles
 {
-    public static string ConfigPath => Path.Combine(Application.StartupPath, "recent.json");
+    public static string ConfigPath =>
+    Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "EarthEdit", "recent.json");
+
     private static int MaxRecentCount = 15;
 
     public static List<string> Load()
@@ -12,6 +14,7 @@ static class RecentFiles
 
     public static void Save(List<string> files)
     {
+        Directory.CreateDirectory(Path.GetDirectoryName(ConfigPath)); // ✅ Ensure path exists
         File.WriteAllText(ConfigPath, JsonConvert.SerializeObject(files, Formatting.Indented));
     }
 

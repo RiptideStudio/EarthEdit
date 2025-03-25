@@ -237,7 +237,7 @@ namespace JsonEditorApp
                             string key = baseName;
                             int i = 1;
                             while (targetObject.ContainsKey(key + i)) i++;
-                            targetObject.Add(key + i, newToken);
+                            targetObject.Add(key + "_copy", newToken);
                         }
                     }
                     else if (target is JArray targetArray)
@@ -250,7 +250,7 @@ namespace JsonEditorApp
                         string key = baseName;
                         int i = 1;
                         while (root.ContainsKey(key + i)) i++;
-                        root.Add(key + i, newToken);
+                        root.Add(key + "_copy", newToken);
                     }
 
                     UpdateTreeView();
@@ -264,6 +264,21 @@ namespace JsonEditorApp
         }
 
         /// <summary>
+        /// Get the path to a savable documents folder
+        /// </summary>
+        /// <returns></returns>
+        private string GetDocumentsPath()
+        {
+            string userDocumentsPath = Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments),
+                "EarthEdit"
+            );
+            Directory.CreateDirectory(userDocumentsPath); // Ensure folder exists
+
+            return userDocumentsPath;
+        }
+
+        /// <summary>
         /// Creates a new file given a JSON schema
         /// </summary>
         /// <param name="schemaName"></param>
@@ -274,7 +289,7 @@ namespace JsonEditorApp
 
             JObject newJson = BuildJsonFromPreset(schemaName);
 
-            string filePath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, fileName + ".json");
+            string filePath = Path.Combine(GetDocumentsPath(), fileName + ".json");
 
             try
             {
@@ -1034,6 +1049,25 @@ namespace JsonEditorApp
         }
 
         /// <summary>
+        /// Removes old control values
+        /// </summary>
+        /// <param name="editorPanel"></param>
+        private void ClearOldValueControls(Panel editorPanel)
+        {
+            var oldControls = editorPanel.Controls.Find("propertyValueTextBox", true)
+                .Concat(editorPanel.Controls.Find("propertyValueCheckBox", true))
+                .Concat(editorPanel.Controls.Find("propertyValueComboBox", true))
+                .Concat(editorPanel.Controls.Find("propertyValueNumberBox", true))
+                .ToList();
+
+            foreach (var control in oldControls)
+            {
+                editorPanel.Controls.Remove(control);
+                control.Dispose(); // Optional: clean up resources
+            }
+        }
+
+        /// <summary>
         /// When you select a node, this is called
         /// </summary>
         /// <param name="sender"></param>
@@ -1074,10 +1108,7 @@ namespace JsonEditorApp
                 nameTextBox.TextChanged += NameTextBox_TextChanged;
 
                 // Remove old value field if it exists
-                if (oldValueControl != null)
-                {
-                    editorPanel.Controls.Remove(oldValueControl);
-                }
+                ClearOldValueControls(editorPanel);
 
                 Control newControl = null; // Holds the new control
 
@@ -1123,7 +1154,7 @@ namespace JsonEditorApp
                         // ✅ Use NumericUpDown for numbers
                         NumericUpDown numberBox = new NumericUpDown
                         {
-                            Name = "propertyValueCheckBox",
+                            Name = "propertyValueNumberBox",
                             Location = new Point(110, 70),
                             Size = new Size(300, 20),
                             DecimalPlaces = token.Type == JTokenType.Float ? 2 : 0,
