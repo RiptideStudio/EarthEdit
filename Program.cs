@@ -9,6 +9,9 @@ using static System.Windows.Forms.VisualStyles.VisualStyleElement.Window;
 
 namespace JsonEditorApp
 {
+    /// <summary>
+    /// Main form class
+    /// </summary>
     public partial class MainForm : Form
     {
         private JObject jsonData;
@@ -34,6 +37,9 @@ namespace JsonEditorApp
         private TabControl fileTabControl;
         private string selectedPath = null;
 
+        /// <summary>
+        /// Set the icon and open the most recent file
+        /// </summary>
         public MainForm()
         {
             this.Icon = new Icon("Icon.ico");
@@ -50,6 +56,9 @@ namespace JsonEditorApp
             }
         }
 
+        /// <summary>
+        /// Initialize the tab editor
+        /// </summary>
         private void InitializeComponent()
         {
             this.Text = "Earth Editor";
@@ -161,6 +170,10 @@ namespace JsonEditorApp
             menuStrip.BackColor = Color.FromArgb(45, 45, 48);
             menuStrip.ForeColor = Color.Black;
         }
+
+        /// <summary>
+        /// Copy the selected node to be pasted
+        /// </summary>
         private void CopySelectedNode()
         {
             TreeView treeView = fileTabControl.SelectedTab.Controls.Find("propertiesTreeView", true).FirstOrDefault() as TreeView;
@@ -174,32 +187,70 @@ namespace JsonEditorApp
             }
         }
 
+        /// <summary>
+        /// Paste the selected node
+        /// </summary>
         private void PasteIntoSelectedNode()
         {
             TreeView treeView = fileTabControl.SelectedTab.Controls.Find("propertiesTreeView", true).FirstOrDefault() as TreeView;
             if (treeView?.SelectedNode?.Tag is string path && Clipboard.ContainsText())
             {
-                string json = Clipboard.GetText();
+                string clipboardText = Clipboard.GetText();
 
                 try
                 {
-                    JToken newToken = JToken.Parse(json);
+                    JToken newToken = JToken.Parse(clipboardText);
                     JToken target = GetTokenAtPath(path);
 
-                    if (target is JObject obj && newToken is JProperty prop)
+                    JObject targetObject = target as JObject;
+
+                    // If not an object or array, fallback to root
+                    if (targetObject == null && target is not JArray)
                     {
-                        if (!obj.ContainsKey(prop.Name))
+                        targetObject = jsonData as JObject;
+                    }
+
+                    string baseName = "Pasted";
+
+                    if (newToken is JProperty propToken)
+                        baseName = propToken.Name;
+                    else if (treeView.SelectedNode?.Text is string label && label.Contains(":"))
+                        baseName = label.Split(':')[0].Trim().Trim('"');
+
+                    if (targetObject != null)
+                    {
+                        if (newToken is JObject pastedObject)
                         {
-                            obj.Add(prop);
+                            foreach (var prop in pastedObject.Properties())
+                            {
+                                if (!targetObject.ContainsKey(prop.Name))
+                                    targetObject.Add(prop.Name, prop.Value);
+                            }
+                        }
+                        else if (newToken is JProperty pastedProp)
+                        {
+                            if (!targetObject.ContainsKey(pastedProp.Name))
+                                targetObject.Add(pastedProp);
+                        }
+                        else
+                        {
+                            string key = baseName;
+                            int i = 1;
+                            while (targetObject.ContainsKey(key + i)) i++;
+                            targetObject.Add(key + i, newToken);
                         }
                     }
-                    else if (target is JArray arr)
+                    else if (target is JArray targetArray)
                     {
-                        arr.Add(newToken);
+                        targetArray.Add(newToken);
                     }
-                    else if (target?.Parent is JArray parentArr)
+                    else
                     {
-                        parentArr.Add(newToken);
+                        JObject root = jsonData as JObject;
+                        string key = baseName;
+                        int i = 1;
+                        while (root.ContainsKey(key + i)) i++;
+                        root.Add(key + i, newToken);
                     }
 
                     UpdateTreeView();
@@ -212,6 +263,10 @@ namespace JsonEditorApp
             }
         }
 
+        /// <summary>
+        /// Creates a new file given a JSON schema
+        /// </summary>
+        /// <param name="schemaName"></param>
         private void CreateNewFileFromSchema(string schemaName)
         {
             string fileName = PromptForFileName();
@@ -233,6 +288,11 @@ namespace JsonEditorApp
             }
         }
 
+        /// <summary>
+        /// Opens a JSON file in a new tab
+        /// </summary>
+        /// <param name="sender"></param>
+        /// <param name="e"></param>
         private void OpenFileInNewTabMenu(object sender, EventArgs e)
         {
             using (OpenFileDialog openFileDialog = new OpenFileDialog())
@@ -247,6 +307,11 @@ namespace JsonEditorApp
             }
         }
 
+        /// <summary>
+        /// Close a tab by right-clicking on it and pressing delete
+        /// </summary>
+        /// <param name="sender"></param>
+        /// <param name="e"></param>
         private void CloseTab_Click(object sender, EventArgs e)
         {
             if (fileTabControl.SelectedTab != null)
@@ -255,12 +320,22 @@ namespace JsonEditorApp
             }
         }
 
+        /// <summary>
+        /// Closes all tabs
+        /// </summary>
+        /// <param name="sender"></param>
+        /// <param name="e"></param>
         private void CloseAllTabs_Click(object sender, EventArgs e)
         {
             fileTabControl.TabPages.Clear();
             CreateNewEditorTab("Untitled", null, null);
         }
 
+        /// <summary>
+        /// Draw the tabs on the top of the screen
+        /// </summary>
+        /// <param name="sender"></param>
+        /// <param name="e"></param>
         private void FileTabControl_DrawItem(object sender, DrawItemEventArgs e)
         {
             TabControl tabControl = sender as TabControl;
@@ -293,6 +368,11 @@ namespace JsonEditorApp
             }
         }
 
+        /// <summary>
+        /// Handle selecting tab files
+        /// </summary>
+        /// <param name="sender"></param>
+        /// <param name="e"></param>
         private void FileTabControl_Selecting(object sender, TabControlCancelEventArgs e)
         {
             if (fileTabControl.SelectedTab?.Tag is EditorContext ctx)
@@ -307,11 +387,23 @@ namespace JsonEditorApp
             }
         }
 
+        /// <summary>
+        /// Create a new empty tab
+        /// </summary>
+        /// <param name="sender"></param>
+        /// <param name="e"></param>
         private void NewTab(object sender, EventArgs e)
         {
             CreateNewEditorTab("Untitled", new JObject());
         }
 
+        /// <summary>
+        /// Setup the editor within the tab. This includes JSON objects UI Elements
+        /// </summary>
+        /// <param name="title"></param>
+        /// <param name="json"></param>
+        /// <param name="filePath"></param>
+        /// <returns></returns>
         private TabPage CreateNewEditorTab(string title, JObject json, string filePath = null)
         {
             TabPage tabPage = new TabPage(title);
@@ -340,6 +432,10 @@ namespace JsonEditorApp
             return tabPage;
         }
 
+        /// <summary>
+        /// Setup the container for the editor, actually creating the UI elements
+        /// </summary>
+        /// <returns></returns>
         private SplitContainer SetupEditor()
         {
             // Create SplitContainer inside the layout panel
@@ -469,22 +565,6 @@ namespace JsonEditorApp
             rawJsonTextBox.BackColor = Theme.Background;
             rawJsonTextBox.ForeColor = Theme.Foreground;
 
-            Button formatJsonButton = new Button();
-            formatJsonButton.Text = "Format JSON";
-            formatJsonButton.Anchor = AnchorStyles.Bottom | AnchorStyles.Left;
-            formatJsonButton.Location = new System.Drawing.Point(10, 490);
-            formatJsonButton.Size = new System.Drawing.Size(100, 30);
-            formatJsonButton.Click += FormatJson_Click;
-            editorPanel.Controls.Add(formatJsonButton);
-
-            Button updateFromRawButton = new Button();
-            updateFromRawButton.Text = "Update From Raw";
-            updateFromRawButton.Anchor = AnchorStyles.Bottom | AnchorStyles.Left;
-            updateFromRawButton.Location = new System.Drawing.Point(120, 490);
-            updateFromRawButton.Size = new System.Drawing.Size(120, 30);
-            updateFromRawButton.Click += UpdateFromRaw_Click;
-            editorPanel.Controls.Add(updateFromRawButton);
-
             propertyNameTextBox.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
             propertyValueTextBox.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
             propertyTypeComboBox.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
@@ -543,6 +623,10 @@ namespace JsonEditorApp
             return splitContainer;
         }
 
+        /// <summary>
+        /// Open a file in a new tab given a filename
+        /// </summary>
+        /// <param name="filePath"></param>
         private void OpenFileInNewTab(string filePath)
         {
             if (string.IsNullOrEmpty(filePath) || !File.Exists(filePath)) return;
@@ -558,6 +642,9 @@ namespace JsonEditorApp
             OpenFile(filePath);
         }
 
+        /// <summary>
+        /// Update the recently opened files
+        /// </summary>
         private void UpdateRecentFilesMenu()
         {
             recentFilesMenuItem.DropDownItems.Clear();
@@ -597,12 +684,21 @@ namespace JsonEditorApp
             }
         }
 
+        /// <summary>
+        /// Called when changing the preset of the schema to use
+        /// </summary>
+        /// <param name="sender"></param>
+        /// <param name="e"></param>
         private void PresetSelector_SelectedIndexChanged(object sender, EventArgs e)
         {
             var combo = sender as ComboBox;
             string selectedPreset = combo.SelectedItem.ToString();
         }
 
+        /// <summary>
+        /// Saves all expanded nodes to maintain live-time tree editing
+        /// </summary>
+        /// <param name="nodes"></param>
         private void SaveExpandedNodes(TreeNodeCollection nodes)
         {
             foreach (TreeNode node in nodes)
@@ -613,6 +709,10 @@ namespace JsonEditorApp
             }
         }
 
+        /// <summary>
+        /// Restore the expanded nodes for live-time editing
+        /// </summary>
+        /// <param name="nodes"></param>
         private void RestoreExpandedNodes(TreeNodeCollection nodes)
         {
             foreach (TreeNode node in nodes)
@@ -622,6 +722,12 @@ namespace JsonEditorApp
                 RestoreExpandedNodes(node.Nodes);
             }
         }
+       
+        /// <summary>
+        /// 
+        /// </summary>
+        /// <param name="sender"></param>
+        /// <param name="e"></param>
         private void propertiesTreeView_KeyDown(object sender, KeyEventArgs e)
         {
             if (e.KeyCode == Keys.Delete)
@@ -643,6 +749,10 @@ namespace JsonEditorApp
                 }
             }
         }
+       
+        /// <summary>
+        /// Update the node view of the tree
+        /// </summary>
         private void UpdateTreeView()
         {
             MarkTabAsDirty();
@@ -679,6 +789,12 @@ namespace JsonEditorApp
             treeView.EndUpdate();
         }
 
+        /// <summary>
+        /// Find a node given a path
+        /// </summary>
+        /// <param name="nodes"></param>
+        /// <param name="path"></param>
+        /// <returns></returns>
         private TreeNode FindNodeByPath(TreeNodeCollection nodes, string path)
         {
             foreach (TreeNode node in nodes)
@@ -692,6 +808,12 @@ namespace JsonEditorApp
             }
             return null;
         }
+        
+        /// <summary>
+        /// Called when we drop a node onto the tree to re-order or nest it
+        /// </summary>
+        /// <param name="sender"></param>
+        /// <param name="e"></param>
         private void PropertiesTreeView_DragDrop(object sender, DragEventArgs e)
         {
             TreeView tree = sender as TreeView;
@@ -780,6 +902,12 @@ namespace JsonEditorApp
             UpdateTreeView();
         }
 
+        /// <summary>
+        /// Populate the tree view with a new json file
+        /// </summary>
+        /// <param name="nodes"></param>
+        /// <param name="token"></param>
+        /// <param name="path"></param>
         private void PopulateTreeView(TreeNodeCollection nodes, JToken token, string path = "")
         {
             if (token is JObject obj)
@@ -829,6 +957,11 @@ namespace JsonEditorApp
             }
         }
 
+        /// <summary>
+        /// Get the display string of the json property
+        /// </summary>
+        /// <param name="token"></param>
+        /// <returns></returns>
         private string GetDisplayValueForTreeNode(JToken token)
         {
             if (token is JValue value)
@@ -838,6 +971,11 @@ namespace JsonEditorApp
             return ""; // ❌ Do NOT modify object names!
         }
 
+        /// <summary>
+        /// When the text box is edited, we need to update
+        /// </summary>
+        /// <param name="sender"></param>
+        /// <param name="e"></param>
         private void NameTextBox_TextChanged(object sender, EventArgs e)
         {
             if (selectedProperty == null || selectedProperty.Parent is not JObject parentObject)
@@ -883,12 +1021,23 @@ namespace JsonEditorApp
             UpdateRawJsonDisplay();
         }
 
+        /// <summary>
+        /// England 
+        /// </summary>
+        /// <param name="oldPath"></param>
+        /// <param name="newName"></param>
+        /// <returns></returns>
         private string BuildNewPath(string oldPath, string newName)
         {
             int lastDot = oldPath.LastIndexOf('.');
             return lastDot >= 0 ? oldPath.Substring(0, lastDot + 1) + newName : newName;
         }
 
+        /// <summary>
+        /// When you select a node, this is called
+        /// </summary>
+        /// <param name="sender"></param>
+        /// <param name="e"></param>
         private void PropertiesTreeView_AfterSelect(object sender, TreeViewEventArgs e)
         {
             if (e.Node == null) return;
@@ -1036,6 +1185,12 @@ namespace JsonEditorApp
             }
         }
 
+        /// <summary>
+        /// See if a property is an enum
+        /// </summary>
+        /// <param name="propertyName"></param>
+        /// <param name="enumOptions"></param>
+        /// <returns></returns>
         private bool TryGetEnumOptionsForProperty(string propertyName, out string[] enumOptions)
         {
             enumOptions = null;
@@ -1044,7 +1199,7 @@ namespace JsonEditorApp
                 JsonSchemas.Properties.TryGetValue(presetName, out var fields))
             {
                 var field = fields.FirstOrDefault(f => f.Name == propertyName);
-                if (field.EnumOptions != null && field.EnumOptions.Length > 0)
+                if (field != null &&  field.EnumOptions != null && field.EnumOptions.Length > 0)
                 {
                     enumOptions = field.EnumOptions;
                     return true;
@@ -1054,6 +1209,10 @@ namespace JsonEditorApp
             return false;
         }
 
+        /// <summary>
+        /// Update the property when changed 
+        /// </summary>
+        /// <param name="newValue"></param>
         private void UpdatePropertyFromControl(object newValue)
         {
             if (string.IsNullOrEmpty(selectedPropertyPath)) return;
@@ -1108,6 +1267,11 @@ namespace JsonEditorApp
             UpdateRawJsonDisplay();
         }
 
+        /// <summary>
+        /// Get the path of a json token
+        /// </summary>
+        /// <param name="path"></param>
+        /// <returns></returns>
         private JToken GetTokenAtPath(string path)
         {
             try
@@ -1167,201 +1331,11 @@ namespace JsonEditorApp
             }
         }
 
-        private void UpdateProperty_Click(object sender, EventArgs e)
-        {
-            TreeView treeView = this.Controls.Find("propertiesTreeView", true)[0] as TreeView;
-
-            if (treeView.SelectedNode == null || treeView.SelectedNode.Tag == null)
-            {
-                MessageBox.Show("Please select a property to update.", "No Property Selected", MessageBoxButtons.OK, MessageBoxIcon.Information);
-                return;
-            }
-
-            TextBox nameTextBox = this.Controls.Find("propertyNameTextBox", true)[0] as TextBox;
-            TextBox valueTextBox = this.Controls.Find("propertyValueTextBox", true)[0] as TextBox;
-            ComboBox typeComboBox = this.Controls.Find("propertyTypeComboBox", true)[0] as ComboBox;
-
-            string path = treeView.SelectedNode.Tag.ToString();
-            string newName = nameTextBox.Text.Trim();
-            string valueText = valueTextBox.Text;
-            string selectedType = typeComboBox.SelectedItem.ToString();
-
-            // ✅ Schema enforcement check
-            if (enforcePresetCheckbox?.Checked == true && presetSelector?.SelectedItem != null)
-            {
-                string selectedPreset = presetSelector.SelectedItem.ToString();
-
-                if (JsonSchemas.Presets.TryGetValue(selectedPreset, out var allowedFields))
-                {
-                    bool isValid = allowedFields.Any(f => f.name == newName);
-                    if (!isValid)
-                    {
-                        MessageBox.Show($"'{newName}' is not a valid property for preset '{selectedPreset}'.", "Invalid Property", MessageBoxButtons.OK, MessageBoxIcon.Warning);
-                        return;
-                    }
-                }
-            }
-
-            // Validate name
-            if (string.IsNullOrWhiteSpace(newName) && !newName.StartsWith("["))
-            {
-                MessageBox.Show("Property name cannot be empty.", "Invalid Name", MessageBoxButtons.OK, MessageBoxIcon.Warning);
-                return;
-            }
-
-            try
-            {
-                // Create the new value based on selected type
-                JToken newValue;
-                switch (selectedType)
-                {
-                    case "String":
-                        newValue = new JValue(valueText);
-                        break;
-                    case "Number":
-                        if (double.TryParse(valueText, out double numValue))
-                            newValue = new JValue(numValue);
-                        else
-                            newValue = new JValue(0);
-                        break;
-                    case "Boolean":
-                        if (bool.TryParse(valueText, out bool boolValue))
-                            newValue = new JValue(boolValue);
-                        else
-                            newValue = new JValue(false);
-                        break;
-                    case "Object":
-                        try
-                        {
-                            newValue = JObject.Parse(valueText);
-                        }
-                        catch
-                        {
-                            newValue = new JObject();
-                        }
-                        break;
-                    case "Array":
-                        try
-                        {
-                            newValue = JArray.Parse(valueText);
-                        }
-                        catch
-                        {
-                            newValue = new JArray();
-                        }
-                        break;
-                    case "Null":
-                        newValue = JValue.CreateNull();
-                        break;
-                    default:
-                        newValue = new JValue(valueText);
-                        break;
-                }
-
-                // Update the JSON data
-                UpdateJsonProperty(path, newName, newValue);
-                UpdateTreeView();
-                UpdateRawJsonDisplay();
-            }
-            catch (Exception ex)
-            {
-                MessageBox.Show($"Error updating property: {ex.Message}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
-            }
-        }
-
-        private void PropertyEditor_Changed(object sender, EventArgs e)
-        {
-            if (string.IsNullOrEmpty(selectedPropertyPath)) return;
-
-            var nameTextBox = this.Controls.Find("propertyNameTextBox", true)[0] as TextBox;
-            var valueTextBox = this.Controls.Find("propertyValueTextBox", true)[0] as TextBox;
-            var typeComboBox = this.Controls.Find("propertyTypeComboBox", true)[0] as ComboBox;
-
-            string newName = nameTextBox.Text.Trim();
-            string valueText = valueTextBox.Text;
-            string selectedType = typeComboBox.SelectedItem?.ToString();
-
-            if (string.IsNullOrWhiteSpace(newName)) return;
-
-            try
-            {
-                // Create new JToken based on type
-                JToken newValue = selectedType switch
-                {
-                    "String" => new JValue(valueText),
-                    "Number" => double.TryParse(valueText, out var num) ? new JValue(num) : new JValue(0),
-                    "Boolean" => bool.TryParse(valueText, out var b) ? new JValue(b) : new JValue(false),
-                    "Object" => JObject.Parse(valueText),
-                    "Array" => JArray.Parse(valueText),
-                    "Null" => JValue.CreateNull(),
-                    _ => new JValue(valueText)
-                };
-
-                // Apply it
-                UpdateJsonProperty(selectedPropertyPath, newName, newValue);
-                UpdateRawJsonDisplay();
-
-                TreeView treeView = this.Controls.Find("propertiesTreeView", true)[0] as TreeView;
-                TreeNode selectedNode = treeView.SelectedNode;
-
-                if (selectedNode != null)
-                {
-                    string displayValue = GetDisplayValueForTreeNode(newValue);
-                    selectedNode.Text = $"{newName}: {displayValue}";
-                    selectedNode.Name = newName;
-                    selectedNode.Tag = selectedPropertyPath;
-                }
-
-                // Update path tracking
-                selectedPropertyPath = selectedPropertyPath.Contains(".")
-                    ? selectedPropertyPath.Substring(0, selectedPropertyPath.LastIndexOf('.') + 1) + newName
-                    : newName;
-            }
-            catch
-            {
-                // Optional: silently fail while typing
-            }
-        }
-
-        private void UpdateJsonProperty(string path, string newName, JToken newValue)
-        {
-            MarkTabAsDirty();
-
-            // For array items, we just update the value
-            if (path.EndsWith("]"))
-            {
-                JToken token = GetTokenAtPath(path);
-                if (token != null && token.Parent != null)
-                {
-                    token.Replace(newValue);
-                }
-                return;
-            }
-
-            // For regular properties
-            string parentPath = "";
-            string currentName = newName;
-
-            // Extract parent path and current property name
-            int lastDotIndex = path.LastIndexOf('.');
-            if (lastDotIndex >= 0)
-            {
-                parentPath = path.Substring(0, lastDotIndex);
-                currentName = path.Substring(lastDotIndex + 1);
-            }
-
-            JToken parentToken = string.IsNullOrEmpty(parentPath) ? jsonData : GetTokenAtPath(parentPath);
-
-            if (parentToken is JObject parentObj)
-            {
-                // Remove the old property
-                parentObj.Remove(currentName);
-
-                // Add with new name and value
-                parentObj.Add(newName, newValue);
-            }
-        }
-
+        /// <summary>
+        /// Add a new property
+        /// </summary>
+        /// <param name="sender"></param>
+        /// <param name="e"></param>
         private void AddProperty_Click(object sender, EventArgs e)
         {
             if (fileTabControl.SelectedTab == null) return;
@@ -1473,6 +1447,10 @@ namespace JsonEditorApp
             SelectNodeByPath(newPath);
         }
 
+        /// <summary>
+        /// Select a node given a path
+        /// </summary>
+        /// <param name="path"></param>
         private void SelectNodeByPath(string path)
         {
             TreeView treeView = this.Controls.Find("propertiesTreeView", true)[0] as TreeView;
@@ -1488,6 +1466,12 @@ namespace JsonEditorApp
             }
         }
 
+        /// <summary>
+        /// Find a node given a path
+        /// </summary>
+        /// <param name="node"></param>
+        /// <param name="path"></param>
+        /// <returns></returns>
         private TreeNode FindNodeByPath(TreeNode node, string path)
         {
             if (node.Tag != null && node.Tag.ToString() == path)
@@ -1503,6 +1487,11 @@ namespace JsonEditorApp
             return null;
         }
 
+        /// <summary>
+        /// Remove a property by clicking
+        /// </summary>
+        /// <param name="sender"></param>
+        /// <param name="e"></param>
         private void RemoveProperty_Click(object sender, EventArgs e)
         {
             TreeView treeView = this.Controls.Find("propertiesTreeView", true)[0] as TreeView;
@@ -1535,6 +1524,10 @@ namespace JsonEditorApp
             }
         }
 
+        /// <summary>
+        /// Remove a json property (triggered from click)
+        /// </summary>
+        /// <param name="path"></param>
         private void RemoveJsonProperty(string path)
         {
             if (string.IsNullOrEmpty(path))
@@ -1586,6 +1579,9 @@ namespace JsonEditorApp
             }
         }
 
+        /// <summary>
+        /// Update the raw json display box data
+        /// </summary>
         private void UpdateRawJsonDisplay()
         {
             if (fileTabControl.SelectedTab == null) return;
@@ -1609,26 +1605,12 @@ namespace JsonEditorApp
 
         }
 
-        private void FormatJson_Click(object sender, EventArgs e)
-        {
-            TextBox rawJsonTextBox = this.Controls.Find("rawJsonTextBox", true)[0] as TextBox;
-
-            try
-            {
-                // Parse and reformat
-                string formattedJson = JsonConvert.SerializeObject(
-                    JsonConvert.DeserializeObject(rawJsonTextBox.Text),
-                    Formatting.Indented
-                );
-
-                rawJsonTextBox.Text = formattedJson;
-            }
-            catch (Exception ex)
-            {
-                MessageBox.Show($"Error formatting JSON: {ex.Message}", "Format Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
-            }
-        }
-
+        /// <summary>
+        /// Update the tags of all of the children given a node
+        /// </summary>
+        /// <param name="parentNode"></param>
+        /// <param name="oldPath"></param>
+        /// <param name="newPath"></param>
         private void UpdateChildTags(TreeNode parentNode, string oldPath, string newPath)
         {
             foreach (TreeNode child in parentNode.Nodes)
@@ -1646,28 +1628,11 @@ namespace JsonEditorApp
             }
         }
 
-        private void UpdateFromRaw_Click(object sender, EventArgs e)
-        {
-            TextBox rawJsonTextBox = this.Controls.Find("rawJsonTextBox", true)[0] as TextBox;
-
-            try
-            {
-                // Parse the raw JSON
-                JObject newJsonData = JObject.Parse(rawJsonTextBox.Text);
-
-                // Update the data
-                jsonData = newJsonData;
-
-                // Update UI
-                UpdateTreeView();
-                UpdateRawJsonDisplay();
-            }
-            catch (Exception ex)
-            {
-                MessageBox.Show($"Error parsing JSON: {ex.Message}", "Parse Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
-            }
-        }
-
+        /// <summary>
+        /// Build a new json object from an item preset
+        /// </summary>
+        /// <param name="presetName"></param>
+        /// <returns></returns>
         private JObject BuildJsonFromPreset(string presetName)
         {
             JObject result = new JObject();
@@ -1694,6 +1659,11 @@ namespace JsonEditorApp
             return result;
         }
 
+        /// <summary>
+        /// Construct a new empty json file
+        /// </summary>
+        /// <param name="sender"></param>
+        /// <param name="e"></param>
         private void NewFile(object sender, EventArgs e)
         {
             // 🚀 Ask the user for a file name
@@ -1720,6 +1690,11 @@ namespace JsonEditorApp
                 MessageBox.Show($"Error creating file: {ex.Message}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
         }
+        
+        /// <summary>
+        /// Ask for the file name input and show property description below
+        /// </summary>
+        /// <returns></returns>
         private string PromptForFileName()
         {
             using (Form prompt = new Form())
@@ -1743,6 +1718,11 @@ namespace JsonEditorApp
             }
         }
 
+        /// <summary>
+        /// Called when clicking open file button
+        /// </summary>
+        /// <param name="sender"></param>
+        /// <param name="e"></param>
         private void OpenFile(object sender, EventArgs e)
         {
             using (OpenFileDialog openFileDialog = new OpenFileDialog())
@@ -1757,6 +1737,10 @@ namespace JsonEditorApp
             }
         }
 
+        /// <summary>
+        /// Actual open file logic
+        /// </summary>
+        /// <param name="filePath"></param>
         private void OpenFile(string filePath)
         {
             try
@@ -1808,6 +1792,11 @@ namespace JsonEditorApp
             }
         }
 
+        /// <summary>
+        /// Loads images after opening a file (animations included)
+        /// </summary>
+        /// <param name="animationPanel"></param>
+        /// <param name="filePath"></param>
         private void LoadImagesForFile(FlowLayoutPanel animationPanel, string filePath)
         {
             if (string.IsNullOrEmpty(filePath) || animationPanel == null) return;
@@ -1845,6 +1834,9 @@ namespace JsonEditorApp
             }
         }
 
+        /// <summary>
+        /// Mark a tab as dirty
+        /// </summary>
         private void MarkTabAsDirty()
         {
             var tab = fileTabControl.SelectedTab;
@@ -1853,6 +1845,10 @@ namespace JsonEditorApp
                 tab.Text += " *";
             }
         }
+
+        /// <summary>
+        /// Mark a tab as saved
+        /// </summary>
         private void MarkTabAsSaved()
         {
             var tab = fileTabControl.SelectedTab;
@@ -1868,7 +1864,11 @@ namespace JsonEditorApp
             }
         }
 
-
+        /// <summary>
+        /// Save a file
+        /// </summary>
+        /// <param name="sender"></param>
+        /// <param name="e"></param>
         private void SaveFile(object sender, EventArgs e)
         {
             if (string.IsNullOrEmpty(currentFilePath))
@@ -1889,6 +1889,11 @@ namespace JsonEditorApp
             }
         }
 
+        /// <summary>
+        /// Select a directory to save a file
+        /// </summary>
+        /// <param name="sender"></param>
+        /// <param name="e"></param>
         private void SaveFileAs(object sender, EventArgs e)
         {
             SaveFileDialog saveFileDialog = new SaveFileDialog();
@@ -1912,6 +1917,44 @@ namespace JsonEditorApp
             }
         }
 
+        /// <summary>
+        /// Deletes the selected node and updates the tree
+        /// </summary>
+        private void RemoveSelectedNode()
+        {
+            // Find the active TreeView in the selected tab
+            TreeView treeView = fileTabControl.SelectedTab?.Controls.Find("propertiesTreeView", true).FirstOrDefault() as TreeView;
+
+            if (treeView?.SelectedNode != null)
+            {
+                string path = treeView.SelectedNode.Tag?.ToString();
+                JToken token = GetTokenAtPath(path);
+
+                if (token != null)
+                {
+                    if (token.Parent is JProperty prop)
+                    {
+                        prop.Remove();
+                    }
+                    else if (token.Parent is JArray array)
+                    {
+                        int index = array.IndexOf(token);
+                        if (index >= 0)
+                            array.RemoveAt(index);
+                    }
+
+                    UpdateRawJsonDisplay();
+                    UpdateTreeView();
+                }
+            }
+        }
+
+        /// <summary>
+        /// Process input commands (hotkeys)
+        /// </summary>
+        /// <param name="msg"></param>
+        /// <param name="keyData"></param>
+        /// <returns></returns>
         protected override bool ProcessCmdKey(ref Message msg, Keys keyData)
         {
             if (keyData == (Keys.Control | Keys.S))
@@ -1921,37 +1964,18 @@ namespace JsonEditorApp
             }
             else if (keyData == Keys.Delete)
             {
-                // Find the active TreeView in the selected tab
-                TreeView treeView = fileTabControl.SelectedTab?.Controls.Find("propertiesTreeView", true).FirstOrDefault() as TreeView;
-
-                if (treeView?.SelectedNode != null)
-                {
-                    string path = treeView.SelectedNode.Tag?.ToString();
-                    JToken token = GetTokenAtPath(path);
-
-                    if (token != null)
-                    {
-                        if (token.Parent is JProperty prop)
-                        {
-                            prop.Remove();
-                        }
-                        else if (token.Parent is JArray array)
-                        {
-                            int index = array.IndexOf(token);
-                            if (index >= 0)
-                                array.RemoveAt(index);
-                        }
-
-                        UpdateRawJsonDisplay();
-                        UpdateTreeView();
-                    }
-                }
-
+                RemoveSelectedNode();
                 return true; // Mark Delete as handled
             }
             else if (keyData == (Keys.Control | Keys.C))
             {
                 CopySelectedNode();
+                return true;
+            }
+            else if (keyData == (Keys.Control | Keys.X))
+            {
+                CopySelectedNode();
+                RemoveSelectedNode();
                 return true;
             }
             else if (keyData == (Keys.Control | Keys.V))
@@ -1962,9 +1986,11 @@ namespace JsonEditorApp
 
             return base.ProcessCmdKey(ref msg, keyData);
         }
-
     }
 
+    /// <summary>
+    /// Run the program
+    /// </summary>
     static class Program
     {
         [STAThread]
