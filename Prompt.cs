@@ -20,6 +20,7 @@
             Text = promptText,
             Width = 390
         };
+        
 
         ComboBox comboBox = new ComboBox()
         {
