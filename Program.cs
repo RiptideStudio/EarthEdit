@@ -36,6 +36,7 @@ namespace JsonEditorApp
         private string originalPropertyName = null;
         private TabControl fileTabControl;
         private string selectedPath = null;
+        private ComboBox newPropertyTypeComboBox;
 
         /// <summary>
         /// Set the icon and open the most recent file
@@ -512,6 +513,16 @@ namespace JsonEditorApp
             removePropertyButton.AutoSize = true;
             removePropertyButton.Click += RemoveProperty_Click;
             buttonPanel.Controls.Add(removePropertyButton);
+
+            // Add new property type dropdown
+            newPropertyTypeComboBox = new ComboBox();
+            newPropertyTypeComboBox.Name = "newPropertyTypeComboBox";
+            newPropertyTypeComboBox.DropDownStyle = ComboBoxStyle.DropDownList;
+            newPropertyTypeComboBox.Items.AddRange(new string[] { "String", "Number", "Boolean", "Object", "Array", "Null" });
+            newPropertyTypeComboBox.SelectedIndex = 0;
+            newPropertyTypeComboBox.Width = 100;
+            buttonPanel.Controls.Add(newPropertyTypeComboBox);
+            toolTip.SetToolTip(newPropertyTypeComboBox, "Type of property to create when adding a new property");
 
             // Editor panel (right)
             Panel editorPanel = new Panel();
@@ -1444,8 +1455,7 @@ namespace JsonEditorApp
                 while (parentObj.ContainsKey(newPropertyName))
                     newPropertyName = $"Name{counter++}";
 
-                ComboBox typeComboBox = tab.Controls.Find("propertyTypeComboBox", true).FirstOrDefault() as ComboBox;
-                string selectedType = typeComboBox?.SelectedItem?.ToString();
+                string selectedType = newPropertyTypeComboBox?.SelectedItem?.ToString();
 
                 JToken defaultValue = selectedType switch
                 {
