@@ -3,6 +3,8 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Windows.Forms;
+using JsonMaker;
+using JsonMaker.Properties;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 using static System.Windows.Forms.VisualStyles.VisualStyleElement.Window;
@@ -43,7 +45,6 @@ namespace JsonEditorApp
         /// </summary>
         public MainForm()
         {
-            this.Icon = new Icon("Icon.ico");
             InitializeComponent();
 
             var recent = RecentFiles.Load();
@@ -62,9 +63,12 @@ namespace JsonEditorApp
         /// </summary>
         private void InitializeComponent()
         {
+            System.ComponentModel.ComponentResourceManager resources = new System.ComponentModel.ComponentResourceManager(typeof(Form1));
+
             this.Text = "Earth Editor";
             this.Size = new System.Drawing.Size(1280, 720);
             this.StartPosition = FormStartPosition.CenterScreen;
+            this.Icon = ((System.Drawing.Icon)(resources.GetObject("$this.Icon")));
 
             TableLayoutPanel layoutPanel = new TableLayoutPanel();
             layoutPanel.Dock = DockStyle.Fill;

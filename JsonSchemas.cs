@@ -44,8 +44,10 @@ static class JsonSchemas
             {
                 ("name", "String", ""),
                 ("friendly", "Boolean", false),
-                ("frames", "Number", 0),
                 ("hp", "Number", 0),
+                ("width", "Number", 16),
+                ("height", "Number", 16),
+                ("frames", "Number", 1),
                 ("damage", "Number", 0),
                 ("npc", "Boolean", false),
                 ("swarm", "Boolean", false),
@@ -70,6 +72,9 @@ static class JsonSchemas
                 ("heldItem", "String", ""),
                 ("skin", "String", ""),
                 ("friendly", "Boolean", true),
+                ("width", "Number", 16),
+                ("height", "Number", 16),
+                ("frames", "Number", 1),
                 ("npc", "Boolean", true),
                 ("smart", "Boolean", false),
                 ("isShop", "Boolean", false),
@@ -264,11 +269,58 @@ static class JsonSchemas
             "Lifeform",
             new List<JsonField>
             {
-                new("id", "String", ""),
-                new("species", "String", ""),
-                new("hostile", "Boolean", false),
-                new("hp", "Number", 100),
-                new("speed", "Number", 10)
+                new("name", "String", "Lifeform"),             // display name
+                new("hostile", "Boolean", false),              // AI aggression
+                new("friendly", "Boolean", true),              // ally flag
+                new("npc", "Boolean", false),                  // non-player character
+                new("boss", "Boolean", false),                 // is this a boss?
+                new("hp", "Number", 5),                        // current health
+                new("width", "Number", 32),                     
+                new("height", "Number", 32),
+                new("frames", "Number", 1),
+                new("defense", "Number", 0),                   // flat defense
+                new("damage", "Number", 1),                    // base damage
+                new("knockBack", "Number", 2),                 // knockback amount
+                new("spd", "Number", 0.5),                     // move speed
+                new("chaseSpd", "Number", 0.5),                // chase speed
+                new("jumpInterval", "Number", 60),             // frames between jumps
+                new("jumpSpeed", "Number", 0.5),               // jump velocity
+                new("jumpCooldown", "Number", 90),             // cooldown between jumps
+                new("maxJumps", "Number", 0),                  // total jumps allowed
+                new("doesContactDamage", "Boolean", true),     // touch damage
+                new("canAggro", "Boolean", true),              // whether it can be aggroed
+                new("aggroMaxTimer", "Number", 240),           // how long aggro lasts
+                new("wanderDistance", "Number", 128),          // distance from origin
+                new("shootSpeed", "Number", 2),                // projectile speed
+                new("projectileDamage", "Number", 2),          // damage from projectile
+                new("shootCooldown", "Number", 120),           // cooldown between shots
+                new("shootReloadSpeed", "Number", 130),        // reload time
+                new("sight", "Number", 128),                   // general sight range
+                new("wakeSight", "Number", 128),               // distance to wake from sleep
+                new("attackSight", "Number", 96),              // range to attack
+                new("strafeSight", "Number", 32),              // for strafing behavior
+                new("buffToInflict", "String", ""),            // string ID of buff
+                new("color", "String", "Red", EnumUtil.ToStringArray<Item.Color>()),              // color string or hex
+                new("aiType", "String", "hornet"),             // string enum AI type
+                new("controlType", "String", "interact"),      // string enum
+                new("lootTable", "Object", null),              // nested loot table
+                new("experience", "Object", null),             // xp loot table
+                new("canJump", "Boolean", true),
+                new("canSwim", "Boolean", false),
+                new("canShoot", "Boolean", true),
+                new("state", "String", "idle"),                // enum
+                new("segmentSize", "Number", 16),
+                new("segments", "Number", 0),
+                new("isSegment", "Boolean", false),
+                new("deathAnimation", "Boolean", false),
+                new("deathSound", "String", ""),               // sound string ID
+                new("hurtSound", "Array", null),               // array of sound strings
+                new("ignoreKnockback", "Boolean", false),
+                new("knockBackResist", "Number", 1.5),
+                new("affectedByGravity", "Boolean", true),
+                new("waterDestroy", "Boolean", false),
+                new("showHealthBar", "Boolean", false),
+                new("showName", "Boolean", false)
             }
         },
         {
@@ -306,6 +358,67 @@ public static class ToolTipLibrary
 
     public static readonly Dictionary<string, string> ItemTooltips = new()
     {
+        // Lifeform variables
+        ["internalName"] = "Internal name used for referencing this lifeform in code.",
+        ["idleAnimation"] = "First frame, last frame, speed [0,60], loops",
+        ["attackAnimation"] = "First frame, last frame, speed [0,60], loops",
+        ["shootAnimation"] = "First frame, last frame, speed [0,60], loops",
+        ["deathAnimation"] = "First frame, last frame, speed [0,60], loops",
+        ["species"] = "Type, class, or race of the lifeform.",
+        ["hostile"] = "Whether the lifeform is aggressive toward the player.",
+        ["npc"] = "If true, the lifeform is a non-player character.",
+        ["boss"] = "If true, this is a boss-type enemy.",
+        ["hp"] = "Current health of the lifeform.",
+        ["maxHp"] = "Maximum health capacity.",
+        ["baseHp"] = "Base maximum health before modifiers.",
+        ["defense"] = "Flat damage reduction applied to incoming attacks.",
+        ["damage"] = "Base attack damage dealt by this lifeform.",
+        ["knockBack"] = "Strength of knockback applied to targets when hitting.",
+        ["spd"] = "Movement speed of the lifeform.",
+        ["chaseSpd"] = "Speed used when pursuing targets.",
+        ["jumpInterval"] = "Time (in frames) between jumps.",
+        ["jumpSpeed"] = "Upward velocity applied when jumping.",
+        ["jumpCooldown"] = "Cooldown (in frames) before the lifeform can jump again.",
+        ["maxJumps"] = "Maximum number of consecutive jumps allowed.",
+        ["doesContactDamage"] = "If true, touching the player causes damage.",
+        ["canAggro"] = "If true, the lifeform can become aggressive toward the player.",
+        ["aggroMaxTimer"] = "How long (in frames) the lifeform stays aggroed before calming down.",
+        ["wanderDistance"] = "Maximum distance the lifeform will wander from its spawn location.",
+        ["shootSpeed"] = "Speed at which projectiles are launched by this lifeform.",
+        ["projectileDamage"] = "Damage dealt by projectiles fired by the lifeform.",
+        ["shootCooldown"] = "Cooldown (in frames) before the lifeform can shoot again.",
+        ["shootReloadSpeed"] = "Time (in frames) it takes to reload before shooting.",
+        ["shootFrame"] = "Frame of the animation on which the projectile is fired.",
+        ["sight"] = "General detection radius for spotting players or targets.",
+        ["wakeSight"] = "Distance within which the lifeform wakes up from sleep.",
+        ["attackSight"] = "Distance required to begin attacking a target.",
+        ["strafeSight"] = "Range within which the lifeform strafes instead of charging.",
+        ["buffToInflict"] = "Buff applied to the target when this lifeform attacks.",
+        ["color"] = "Visual color used to tint or represent this lifeform.",
+        ["aiType"] = "Defines which behavior system the lifeform uses.",
+        ["controlType"] = "Specifies how the lifeform interacts with the world.",
+        ["lootTable"] = "Loot table dropped when this lifeform is defeated.",
+        ["experience"] = "Experience or resources granted upon death. [min][max]",
+        ["friendly"] = "If true, the lifeform will not attack the player.",
+        ["canJump"] = "If true, the lifeform can jump.",
+        ["canSwim"] = "If true, the lifeform can swim.",
+        ["canShoot"] = "If true, the lifeform can fire projectiles.",
+        ["state"] = "Current state of the lifeform (idle, chase, attack, etc).",
+        ["segmentSize"] = "Pixel length of each segment for segmented creatures.",
+        ["segments"] = "Number of body segments this lifeform has (if segmented).",
+        ["isSegment"] = "If true, this is a segment of a larger entity.",
+        ["deathAnimation"] = "If true, plays a custom death animation.",
+        ["deathSound"] = "Sound ID played when the lifeform dies.",
+        ["hurtSound"] = "List of sound IDs played when damaged.",
+        ["ignoreKnockback"] = "If true, the lifeform will not be affected by knockback.",
+        ["knockBackResist"] = "Multiplier that reduces knockback force.",
+        ["affectedByGravity"] = "If true, the lifeform falls due to gravity.",
+        ["waterDestroy"] = "If true, entering water destroys the lifeform.",
+        ["showHealthBar"] = "If true, displays the health bar UI above the lifeform.",
+        ["showName"] = "If true, displays the name above the lifeform.",
+        ["width"] = "Width of the sprite",
+        ["height"] = "Height of the sprite",
+        // items
         ["name"] = "Display name of the item.",
         ["fileName"] = "Internal filename (used for linking assets).",
         ["damage"] = "Base damage dealt by the item.",
